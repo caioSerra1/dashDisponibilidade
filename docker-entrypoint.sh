@@ -1,11 +1,8 @@
 #!/bin/sh
 set -e
 
-echo "[entrypoint] running migrations..."
-prisma migrate deploy || {
-  echo "[entrypoint] migrate failed, trying db push as fallback"
-  prisma db push --accept-data-loss
-}
+echo "[entrypoint] pushing schema..."
+prisma db push --skip-generate --accept-data-loss
 
 echo "[entrypoint] seeding..."
 tsx prisma/seed.ts || echo "[entrypoint] seed skipped/failed (non-fatal)"
