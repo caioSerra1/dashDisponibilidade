@@ -1,0 +1,156 @@
+- generic [ref=e2]:
+  - complementary [ref=e3]:
+    - img "Portal Concursos" [ref=e5]
+    - navigation [ref=e6]:
+      - link "Painel" [ref=e7] [cursor=pointer]:
+        - /url: /dashboard
+        - img [ref=e8]
+        - text: Painel
+      - link "Produtividade" [ref=e10] [cursor=pointer]:
+        - /url: /dashboard/produtividade
+        - img [ref=e11]
+        - text: Produtividade
+      - link "Tasks" [ref=e13] [cursor=pointer]:
+        - /url: /tasks
+        - img [ref=e14]
+        - text: Tasks
+      - link "Minhas Metas" [ref=e17] [cursor=pointer]:
+        - /url: /metas
+        - img [ref=e18]
+        - text: Minhas Metas
+      - link "Loja" [ref=e22] [cursor=pointer]:
+        - /url: /loja
+        - img [ref=e23]
+        - text: Loja
+      - link "Mural" [ref=e26] [cursor=pointer]:
+        - /url: /mural
+        - img [ref=e27]
+        - text: Mural
+      - link "Conquistas" [ref=e29] [cursor=pointer]:
+        - /url: /achievements
+        - img [ref=e30]
+        - text: Conquistas
+      - link "Notificações" [ref=e36] [cursor=pointer]:
+        - /url: /notificacoes
+        - img [ref=e37]
+        - text: Notificações
+      - link "Perfil" [ref=e40] [cursor=pointer]:
+        - /url: /perfil
+        - img [ref=e41]
+        - text: Perfil
+      - generic [ref=e45]:
+        - button "Cadastros" [ref=e46] [cursor=pointer]:
+          - generic [ref=e47]: Cadastros
+          - img [ref=e48]
+        - generic [ref=e50]:
+          - link "Usuários" [ref=e51] [cursor=pointer]:
+            - /url: /admin/users
+            - img [ref=e52]
+            - text: Usuários
+          - link "Metas" [ref=e57] [cursor=pointer]:
+            - /url: /admin/goals
+            - img [ref=e58]
+            - text: Metas
+          - link "Conquistas" [ref=e62] [cursor=pointer]:
+            - /url: /admin/achievements
+            - img [ref=e63]
+            - text: Conquistas
+          - link "Itens da Loja" [ref=e66] [cursor=pointer]:
+            - /url: /admin/loja/itens
+            - img [ref=e67]
+            - text: Itens da Loja
+      - generic [ref=e71]:
+        - button "Operação" [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: Operação
+          - img [ref=e74]
+        - generic [ref=e76]:
+          - link "Pedidos da Loja" [ref=e77] [cursor=pointer]:
+            - /url: /admin/loja/pedidos
+            - img [ref=e78]
+            - text: Pedidos da Loja
+          - link "Enviar Aviso" [ref=e81] [cursor=pointer]:
+            - /url: /admin/notifications
+            - img [ref=e82]
+            - text: Enviar Aviso
+          - link "Servidores Zabbix" [ref=e85] [cursor=pointer]:
+            - /url: /admin/zabbix
+            - img [ref=e86]
+            - text: Servidores Zabbix
+          - link "Execuções" [ref=e89] [cursor=pointer]:
+            - /url: /admin/jobs
+            - img [ref=e90]
+            - text: Execuções
+      - generic [ref=e92]:
+        - button "Sistema" [ref=e93] [cursor=pointer]:
+          - generic [ref=e94]: Sistema
+          - img [ref=e95]
+        - generic [ref=e97]:
+          - link "Configuração" [ref=e98] [cursor=pointer]:
+            - /url: /admin/config
+            - img [ref=e99]
+            - text: Configuração
+          - link "Integrações" [ref=e102] [cursor=pointer]:
+            - /url: /admin/integrations
+            - img [ref=e103]
+            - text: Integrações
+      - button "Sair" [ref=e105] [cursor=pointer]:
+        - img [ref=e106]
+        - text: Sair
+    - generic [ref=e109]:
+      - img "Administrador" [ref=e111]
+      - generic [ref=e112]:
+        - paragraph [ref=e113]: Administrador
+        - paragraph [ref=e114]: tecnologia@cursosdoportal.com.br
+  - generic [ref=e115]:
+    - banner [ref=e116]:
+      - heading "Usuários" [level=1] [ref=e117]
+      - button "Notificações" [ref=e119] [cursor=pointer]:
+        - img [ref=e120]
+      - generic [ref=e123]:
+        - img [ref=e124]
+        - generic [ref=e129]: "0"
+      - img "Administrador" [ref=e131]
+    - main [ref=e132]:
+      - generic [ref=e133]:
+        - generic [ref=e134]:
+          - heading "Novo usuário" [level=3] [ref=e136]:
+            - img [ref=e137]
+            - text: Novo usuário
+          - generic [ref=e141]:
+            - generic [ref=e142]:
+              - text: Nome
+              - textbox [ref=e143]
+            - generic [ref=e144]:
+              - text: E-mail
+              - textbox [ref=e145]
+            - generic [ref=e146]:
+              - text: Senha inicial
+              - textbox [ref=e147]
+            - generic [ref=e148]:
+              - text: ID ClickUp
+              - textbox "123456" [ref=e149]
+            - generic [ref=e150]:
+              - text: Cargo
+              - combobox [ref=e151]:
+                - option "Membro" [selected]
+                - option "Administrador"
+            - generic [ref=e152]:
+              - generic [ref=e153]:
+                - text: Aparece no mural
+                - paragraph [ref=e154]: "Default: membros sim, admins não."
+              - switch [checked] [ref=e155] [cursor=pointer]
+              - checkbox [checked]
+            - button "Criar usuário" [ref=e157] [cursor=pointer]
+        - generic [ref=e158]:
+          - heading "Usuários (0)" [level=3] [ref=e160]
+          - table [ref=e163]:
+            - rowgroup [ref=e164]:
+              - row "Nome E-mail ID ClickUp Cargo Mural Ativo" [ref=e165]:
+                - columnheader "Nome" [ref=e166]
+                - columnheader "E-mail" [ref=e167]
+                - columnheader "ID ClickUp" [ref=e168]
+                - columnheader "Cargo" [ref=e169]
+                - columnheader "Mural" [ref=e170]
+                - columnheader "Ativo" [ref=e171]
+                - columnheader [ref=e172]
+            - rowgroup

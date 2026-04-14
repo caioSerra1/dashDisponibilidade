@@ -1,0 +1,112 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - img "Portal Concursos" [ref=e5]
+      - navigation [ref=e6]:
+        - link "Painel" [ref=e7] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e8]
+          - text: Painel
+        - link "Produtividade" [ref=e10] [cursor=pointer]:
+          - /url: /dashboard/produtividade
+          - img [ref=e11]
+          - text: Produtividade
+        - link "Tasks" [ref=e13] [cursor=pointer]:
+          - /url: /tasks
+          - img [ref=e14]
+          - text: Tasks
+        - link "Minhas Metas" [ref=e17] [cursor=pointer]:
+          - /url: /metas
+          - img [ref=e18]
+          - text: Minhas Metas
+        - link "Loja" [ref=e22] [cursor=pointer]:
+          - /url: /loja
+          - img [ref=e23]
+          - text: Loja
+        - link "Mural" [ref=e26] [cursor=pointer]:
+          - /url: /mural
+          - img [ref=e27]
+          - text: Mural
+        - link "Conquistas" [ref=e29] [cursor=pointer]:
+          - /url: /achievements
+          - img [ref=e30]
+          - text: Conquistas
+        - link "Notificações" [ref=e36] [cursor=pointer]:
+          - /url: /notificacoes
+          - img [ref=e37]
+          - text: Notificações
+        - link "Perfil" [ref=e40] [cursor=pointer]:
+          - /url: /perfil
+          - img [ref=e41]
+          - text: Perfil
+        - button "Cadastros" [ref=e46] [cursor=pointer]:
+          - generic [ref=e47]: Cadastros
+          - img [ref=e48]
+        - button "Operação" [ref=e51] [cursor=pointer]:
+          - generic [ref=e52]: Operação
+          - img [ref=e53]
+        - button "Sistema" [ref=e56] [cursor=pointer]:
+          - generic [ref=e57]: Sistema
+          - img [ref=e58]
+        - button "Sair" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+          - text: Sair
+      - generic [ref=e64]:
+        - img "Administrador" [ref=e66]
+        - generic [ref=e67]:
+          - paragraph [ref=e68]: Administrador
+          - paragraph [ref=e69]: tecnologia@cursosdoportal.com.br
+    - generic [ref=e70]:
+      - banner [ref=e71]:
+        - heading "Conquistas" [level=1] [ref=e72]
+        - button "Notificações" [ref=e74] [cursor=pointer]:
+          - img [ref=e75]
+        - generic [ref=e78]:
+          - img [ref=e79]
+          - generic [ref=e84]: "0"
+        - img "Administrador" [ref=e86]
+      - main [ref=e87]:
+        - generic [ref=e88]:
+          - generic [ref=e89]:
+            - heading "Desbloqueadas (2)" [level=3] [ref=e91]
+            - generic [ref=e93]:
+              - generic [ref=e94]:
+                - img [ref=e96]
+                - generic [ref=e99]:
+                  - paragraph [ref=e100]: Disponibilidade Perfeita
+                  - paragraph [ref=e101]: Fechou um mês com 100% de disponibilidade.
+                - generic [ref=e102]: 13/04/2026
+              - generic [ref=e103]:
+                - img [ref=e105]
+                - generic [ref=e107]:
+                  - paragraph [ref=e108]: Primeiro mês fechado
+                  - paragraph [ref=e109]: Você fechou seu primeiro mês de apuração.
+                - generic [ref=e110]: 13/04/2026
+          - generic [ref=e111]:
+            - heading "Catálogo" [level=3] [ref=e113]
+            - generic [ref=e115]:
+              - generic [ref=e116]:
+                - paragraph [ref=e117]: Primeiro mês fechado
+                - paragraph [ref=e118]: Você fechou seu primeiro mês de apuração.
+                - paragraph [ref=e119]: +50 XP
+              - generic [ref=e120]:
+                - paragraph [ref=e121]: Streak de 7 dias
+                - paragraph [ref=e122]: 7 dias consecutivos com SLA acima da meta.
+                - paragraph [ref=e123]: +70 XP
+              - generic [ref=e124]:
+                - paragraph [ref=e125]: 10 sprints entregues
+                - paragraph [ref=e126]: Entregou pontos em 10 sprints semanais.
+                - paragraph [ref=e127]: +120 XP
+              - generic [ref=e128]:
+                - paragraph [ref=e129]: Meta de pontos batida
+                - paragraph [ref=e130]: Atingiu a meta mensal de pontos de sprint.
+                - paragraph [ref=e131]: +150 XP
+              - generic [ref=e132]:
+                - paragraph [ref=e133]: Disponibilidade Perfeita
+                - paragraph [ref=e134]: Fechou um mês com 100% de disponibilidade.
+                - paragraph [ref=e135]: +200 XP
+              - generic [ref=e136]:
+                - paragraph [ref=e137]: Streak de 30 dias
+                - paragraph [ref=e138]: Mês inteiro acima da meta de SLA.
+                - paragraph [ref=e139]: +300 XP
+  - alert [ref=e140]

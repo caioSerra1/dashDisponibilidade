@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: dash
+          POSTGRES_PASSWORD: dash
+          POSTGRES_DB: dash
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U dash"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql://dash:dash@localhost:5432/dash?schema=public
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ci-secret-ci-secret-ci-secret-xx
+      CRON_SECRET: ci-cron-secret-ci-cron-secret-xx
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npx prisma generate
+      - run: npx prisma migrate deploy || npx prisma db push
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run arch
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - name: npm audit
+        run: npm audit --audit-level=high || true
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: OSV scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v1.9.1
+        with:
+          scan-args: |-
+            --skip-git
+            ./
+        continue-on-error: true
+
+  docker:
+    needs: [quality]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -t dash-disponibilidade:ci .
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: dash-disponibilidade:ci
+          format: table
+          exit-code: "0"
+          severity: CRITICAL,HIGH

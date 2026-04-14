@@ -1,0 +1,8 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - paragraph [ref=e3]: Erro 404
+    - heading "Página não encontrada" [level=1] [ref=e4]
+    - paragraph [ref=e5]: A página que você tentou acessar não existe ou foi movida.
+    - link "Voltar ao painel" [ref=e6] [cursor=pointer]:
+      - /url: /dashboard
+  - alert [ref=e7]

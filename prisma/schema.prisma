@@ -1,0 +1,297 @@
+// Prisma schema — dash-disponibilidade
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String
+  passwordHash   String
+  role           Role     @default(MEMBER)
+  clickupUserId  String?  @unique
+  active         Boolean  @default(true)
+  showInMural    Boolean  @default(true)
+  avatarPath     String?
+  profileBio     String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  dailySnapshots    DailySnapshot[]
+  monthlyCloses     MonthlyClose[]
+  userAchievements  UserAchievement[]
+  goals             Goal[]
+  wallet            Wallet?
+  coinTxns          CoinTxn[]
+  redemptions       Redemption[]
+  taskMetrics       TaskMetricSnapshot[]
+  notifications     Notification[]
+}
+
+model Config {
+  key   String @id
+  value String
+}
+
+model SlaTier {
+  id        String @id @default(cuid())
+  minPct    Float
+  payoutPct Float
+  order     Int    @default(0)
+
+  @@index([minPct])
+}
+
+model ZabbixHost {
+  hostId    String   @id
+  name      String
+  enabled   Boolean  @default(false)
+  lastSync  DateTime?
+}
+
+model DailySnapshot {
+  id                    String   @id @default(cuid())
+  userId                String
+  date                  DateTime @db.Date
+  pontosAcumulados      Float
+  slaMedioMes           Float
+  valorPontos           Float
+  valorDisponibilidade  Float
+  valorParcial          Float
+  hostBreakdown         Json?
+  createdAt             DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model MonthlyClose {
+  id                    String   @id @default(cuid())
+  userId                String
+  year                  Int
+  month                 Int
+  pontos                Float
+  slaFinal              Float
+  valorPontos           Float
+  valorDisponibilidade  Float
+  valorTotal            Float
+  closedAt              DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, year, month])
+  @@index([year, month])
+}
+
+model Achievement {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  name        String
+  description String
+  icon        String
+  xp          Int     @default(0)
+  coinsReward Int     @default(0)
+  rule        Json?    // { type, value? } — interpretado em src/lib/achievement-rules.ts
+  active      Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
+
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id             String   @id @default(cuid())
+  userId         String
+  achievementId  String
+  unlockedAt     DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, achievementId])
+  @@index([userId, unlockedAt])
+}
+
+model JobRun {
+  id        String   @id @default(cuid())
+  job       String
+  status    String
+  startedAt DateTime @default(now())
+  finishedAt DateTime?
+  message   String?
+
+  @@index([job, startedAt])
+}
+
+// -------- FASE 2: engajamento + produtividade + loja --------
+
+enum GoalKind {
+  POINTS
+  TASKS_CLOSED
+  SLA
+  AVG_RESOLUTION
+  CUSTOM
+}
+
+enum GoalPeriod {
+  MONTH
+  WEEK
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  userId      String
+  kind        GoalKind
+  period      GoalPeriod @default(MONTH)
+  target      Float
+  coinsReward Int        @default(0)
+  label       String?
+  active      Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hits GoalHit[]
+
+  @@index([userId, period, active])
+}
+
+model GoalHit {
+  id        String   @id @default(cuid())
+  goalId    String
+  year      Int
+  month     Int
+  week      Int?
+  hitAt     DateTime @default(now())
+  coinsPaid Int
+
+  goal Goal @relation(fields: [goalId], references: [id], onDelete: Cascade)
+
+  @@unique([goalId, year, month, week])
+}
+
+model Wallet {
+  userId    String   @id
+  coins     Int      @default(0)
+  lifetime  Int      @default(0)
+  updatedAt DateTime @updatedAt
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CoinTxn {
+  id        String   @id @default(cuid())
+  userId    String
+  delta     Int
+  reason    String
+  refType   String?
+  refId     String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model StoreItem {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  imageUrl    String?
+  priceCoins  Int
+  stock       Int?
+  featured    Boolean  @default(false)
+  sortOrder   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  redemptions Redemption[]
+
+  @@index([featured, sortOrder])
+}
+
+enum RedemptionStatus {
+  PENDING
+  APPROVED
+  DELIVERED
+  REJECTED
+}
+
+model Redemption {
+  id          String           @id @default(cuid())
+  userId      String
+  itemId      String
+  status      RedemptionStatus @default(PENDING)
+  priceCoins  Int
+  requestedAt DateTime         @default(now())
+  approvedAt  DateTime?
+  deliveredAt DateTime?
+  note        String?
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item StoreItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([status, requestedAt])
+}
+
+model TaskMetricSnapshot {
+  id                       String   @id @default(cuid())
+  userId                   String
+  date                     DateTime @db.Date
+  year                     Int
+  month                    Int
+  tasksClosedMonth         Int
+  tasksClosedWeek          Int
+  pointsMonth              Float
+  avgResolutionHoursMonth  Float?
+  avgCycleHoursMonth       Float?
+  throughputPerWeek        Float?
+  reopenedCount            Int      @default(0)
+  tagsBreakdown            Json?
+  priorityBreakdown        Json?
+  createdAt                DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, date])
+  @@index([year, month])
+}
+
+enum NotificationType {
+  SYSTEM
+  REDEMPTION
+  GOAL
+  ACHIEVEMENT
+  BROADCAST
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType @default(SYSTEM)
+  title     String
+  body      String?
+  href      String?
+  refType   String?
+  refId     String?
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}

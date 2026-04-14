@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run:*)",
+      "Bash(taskkill //F //IM node.exe //T)",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_wait_for",
+      "mcp__playwright__browser_console_messages",
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_evaluate",
+      "mcp__playwright__browser_take_screenshot",
+      "mcp__playwright__browser_close",
+      "Bash(tasklist)",
+      "Bash(netstat -ano)",
+      "Bash(wmic process:*)",
+      "Bash(taskkill /F /PID 35448)",
+      "Bash(taskkill //F //PID 35448)",
+      "Bash(npm start:*)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/favicon.ico)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/icon.svg)",
+      "mcp__playwright__browser_type",
+      "Bash(taskkill //F //PID 47380)"
+    ]
+  }
+}

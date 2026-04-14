@@ -1,0 +1,69 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - img "Portal Concursos" [ref=e5]
+      - navigation [ref=e6]:
+        - link "Painel" [ref=e7] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e8]
+          - text: Painel
+        - link "Produtividade" [ref=e10] [cursor=pointer]:
+          - /url: /dashboard/produtividade
+          - img [ref=e11]
+          - text: Produtividade
+        - link "Tasks" [ref=e13] [cursor=pointer]:
+          - /url: /tasks
+          - img [ref=e14]
+          - text: Tasks
+        - link "Minhas Metas" [ref=e17] [cursor=pointer]:
+          - /url: /metas
+          - img [ref=e18]
+          - text: Minhas Metas
+        - link "Loja" [ref=e22] [cursor=pointer]:
+          - /url: /loja
+          - img [ref=e23]
+          - text: Loja
+        - link "Mural" [ref=e26] [cursor=pointer]:
+          - /url: /mural
+          - img [ref=e27]
+          - text: Mural
+        - link "Conquistas" [ref=e29] [cursor=pointer]:
+          - /url: /achievements
+          - img [ref=e30]
+          - text: Conquistas
+        - link "Notificações" [ref=e36] [cursor=pointer]:
+          - /url: /notificacoes
+          - img [ref=e37]
+          - text: Notificações
+        - link "Perfil" [ref=e40] [cursor=pointer]:
+          - /url: /perfil
+          - img [ref=e41]
+          - text: Perfil
+        - button "Cadastros" [ref=e46] [cursor=pointer]:
+          - generic [ref=e47]: Cadastros
+          - img [ref=e48]
+        - button "Operação" [ref=e51] [cursor=pointer]:
+          - generic [ref=e52]: Operação
+          - img [ref=e53]
+        - button "Sistema" [ref=e56] [cursor=pointer]:
+          - generic [ref=e57]: Sistema
+          - img [ref=e58]
+        - button "Sair" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+          - text: Sair
+      - generic [ref=e64]:
+        - img "Administrador" [ref=e66]
+        - generic [ref=e67]:
+          - paragraph [ref=e68]: Administrador
+          - paragraph [ref=e69]: tecnologia@cursosdoportal.com.br
+    - generic [ref=e70]:
+      - banner [ref=e71]:
+        - heading "Tasks" [level=1] [ref=e72]
+        - button "Notificações" [ref=e74] [cursor=pointer]:
+          - img [ref=e75]
+        - generic [ref=e78]:
+          - img [ref=e79]
+          - generic [ref=e84]: "10"
+        - img "Administrador" [ref=e86]
+      - main [ref=e87]
+  - alert [ref=e91]

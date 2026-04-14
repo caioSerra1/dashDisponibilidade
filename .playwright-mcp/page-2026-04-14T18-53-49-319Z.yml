@@ -1,0 +1,214 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - img "Portal Concursos" [ref=e5]
+      - navigation [ref=e6]:
+        - link "Painel" [ref=e7] [cursor=pointer]:
+          - /url: /dashboard
+          - img [ref=e8]
+          - text: Painel
+        - link "Produtividade" [ref=e10] [cursor=pointer]:
+          - /url: /dashboard/produtividade
+          - img [ref=e11]
+          - text: Produtividade
+        - link "Tasks" [ref=e13] [cursor=pointer]:
+          - /url: /tasks
+          - img [ref=e14]
+          - text: Tasks
+        - link "Minhas Metas" [ref=e17] [cursor=pointer]:
+          - /url: /metas
+          - img [ref=e18]
+          - text: Minhas Metas
+        - link "Loja" [ref=e22] [cursor=pointer]:
+          - /url: /loja
+          - img [ref=e23]
+          - text: Loja
+        - link "Mural" [ref=e26] [cursor=pointer]:
+          - /url: /mural
+          - img [ref=e27]
+          - text: Mural
+        - link "Conquistas" [ref=e29] [cursor=pointer]:
+          - /url: /achievements
+          - img [ref=e30]
+          - text: Conquistas
+        - link "Notificações" [ref=e36] [cursor=pointer]:
+          - /url: /notificacoes
+          - img [ref=e37]
+          - text: Notificações
+        - link "Perfil" [ref=e40] [cursor=pointer]:
+          - /url: /perfil
+          - img [ref=e41]
+          - text: Perfil
+        - button "Cadastros" [ref=e46] [cursor=pointer]:
+          - generic [ref=e47]: Cadastros
+          - img [ref=e48]
+        - button "Operação" [ref=e51] [cursor=pointer]:
+          - generic [ref=e52]: Operação
+          - img [ref=e53]
+        - button "Sistema" [ref=e56] [cursor=pointer]:
+          - generic [ref=e57]: Sistema
+          - img [ref=e58]
+        - button "Sair" [ref=e60] [cursor=pointer]:
+          - img [ref=e61]
+          - text: Sair
+      - generic [ref=e64]:
+        - img "Administrador" [ref=e66]
+        - generic [ref=e67]:
+          - paragraph [ref=e68]: Administrador
+          - paragraph [ref=e69]: tecnologia@cursosdoportal.com.br
+    - generic [ref=e70]:
+      - banner [ref=e71]:
+        - heading "Painel" [level=1] [ref=e72]
+        - button "Notificações" [ref=e74] [cursor=pointer]:
+          - img [ref=e75]
+        - generic [ref=e78]:
+          - img [ref=e79]
+          - generic [ref=e84]: "10"
+        - img "Administrador" [ref=e86]
+      - main [ref=e87]:
+        - generic [ref=e97]:
+          - generic [ref=e101]:
+            - generic [ref=e102]:
+              - generic [ref=e103]:
+                - paragraph [ref=e104]: Sua variável parcial de abril de 2026
+                - paragraph [ref=e105]: R$ 1.560,00
+                - generic [ref=e106]:
+                  - generic [ref=e107]: parcial
+                  - generic [ref=e108]: atualizado em 13/04/2026
+              - generic [ref=e109]:
+                - generic [ref=e110]:
+                  - img [ref=e111]
+                  - generic [ref=e114]: "300"
+                - generic [ref=e115]:
+                  - paragraph [ref=e116]: Prata
+                  - paragraph [ref=e117]: 300 XP
+                  - paragraph [ref=e118]: 200 p/ Ouro
+            - generic [ref=e119]:
+              - generic [ref=e121]:
+                - generic [ref=e122]: Progresso de pontos
+                - generic [ref=e123]: 6 / 40
+              - generic [ref=e127]:
+                - generic [ref=e128]: Mês corrente
+                - generic [ref=e129]: dia 14 de 30
+          - generic [ref=e132]:
+            - generic [ref=e135]:
+              - generic [ref=e136]:
+                - paragraph [ref=e137]: Pontos acumulados
+                - paragraph [ref=e138]: "6"
+                - paragraph [ref=e139]: "projeção fim do mês: 13"
+              - img [ref=e141]
+            - generic [ref=e147]:
+              - generic [ref=e148]:
+                - paragraph [ref=e149]: Variável de desenvolvimento
+                - paragraph [ref=e150]: R$ 60,00
+                - paragraph [ref=e151]: 6 pontos entregues
+              - img [ref=e153]
+            - generic [ref=e160]:
+              - generic [ref=e161]:
+                - paragraph [ref=e162]: Disponibilidade média
+                - paragraph [ref=e163]: 100.00%
+                - paragraph [ref=e164]: baseada em 3 servidores
+              - img [ref=e166]
+            - generic [ref=e171]:
+              - generic [ref=e172]:
+                - paragraph [ref=e173]: Variável de disponibilidade
+                - paragraph [ref=e174]: R$ 1.500,00
+                - paragraph [ref=e175]: de R$ 1.500,00 possíveis
+              - img [ref=e177]
+          - generic [ref=e183]:
+            - generic [ref=e184]:
+              - heading "Evolução no mês" [level=3] [ref=e186]:
+                - img [ref=e187]
+                - text: Evolução no mês
+              - img [ref=e193]:
+                - generic [ref=e200]: 13/04
+                - generic [ref=e202]:
+                  - generic [ref=e204]: "0"
+                  - generic [ref=e206]: "400"
+                  - generic [ref=e208]: "800"
+                  - generic [ref=e210]: "1200"
+                  - generic [ref=e212]: "1600"
+            - generic [ref=e216]:
+              - heading "Projeção de fechamento" [level=3] [ref=e218]:
+                - img [ref=e219]
+                - text: Projeção de fechamento
+              - generic [ref=e222]:
+                - generic [ref=e223]:
+                  - paragraph [ref=e224]: Se mantiver o ritmo até o fim do mês
+                  - paragraph [ref=e225]: R$ 3.342,86
+                - generic [ref=e226]:
+                  - generic [ref=e227]:
+                    - paragraph [ref=e228]: Pontos projetados
+                    - paragraph [ref=e229]: "13"
+                  - generic [ref=e230]:
+                    - paragraph [ref=e231]: Dias restantes
+                    - paragraph [ref=e232]: 16 dias
+                - generic [ref=e233]:
+                  - img [ref=e234]
+                  - generic [ref=e236]:
+                    - text: O valor parcial é
+                    - strong [ref=e237]: recalculado diariamente
+                    - text: e só vira definitivo no fechamento do mês.
+          - generic [ref=e238]:
+            - generic [ref=e239]:
+              - heading "Disponibilidade por servidor" [level=3] [ref=e241]:
+                - img [ref=e242]
+                - text: Disponibilidade por servidor
+              - generic [ref=e255]:
+                - generic [ref=e257]:
+                  - generic [ref=e258]:
+                    - generic [ref=e260]: hostingerAI
+                    - generic [ref=e261]: saudável
+                  - generic [ref=e262]: 100.00%
+                - generic [ref=e266]:
+                  - generic [ref=e267]:
+                    - generic [ref=e269]: Servidor Plataforma - Produção
+                    - generic [ref=e270]: saudável
+                  - generic [ref=e271]: 100.00%
+                - generic [ref=e275]:
+                  - generic [ref=e276]:
+                    - generic [ref=e278]: server.portalconcursos.cloud (WHM/WordPress)
+                    - generic [ref=e279]: saudável
+                  - generic [ref=e280]: 100.00%
+            - generic [ref=e283]:
+              - heading "Conquistas" [level=3] [ref=e285]:
+                - img [ref=e286]
+                - text: Conquistas
+              - generic [ref=e292]:
+                - generic [ref=e293]:
+                  - img [ref=e295]
+                  - generic [ref=e297]:
+                    - paragraph [ref=e298]: Sequência de 1 dia
+                    - paragraph [ref=e299]: acima de 99% de disponibilidade
+                - generic [ref=e300]:
+                  - generic [ref=e301]:
+                    - img [ref=e303]
+                    - generic [ref=e306]:
+                      - paragraph [ref=e307]: Disponibilidade Perfeita
+                      - paragraph [ref=e308]: Fechou um mês com 100% de disponibilidade.
+                    - generic [ref=e309]: 13/04/2026
+                  - generic [ref=e310]:
+                    - img [ref=e312]
+                    - generic [ref=e314]:
+                      - paragraph [ref=e315]: Primeiro mês fechado
+                      - paragraph [ref=e316]: Você fechou seu primeiro mês de apuração.
+                    - generic [ref=e317]: 13/04/2026
+          - generic [ref=e318]:
+            - heading "Histórico de meses fechados" [level=3] [ref=e320]:
+              - img [ref=e321]
+              - text: Histórico de meses fechados
+            - table [ref=e326]:
+              - rowgroup [ref=e327]:
+                - row "Mês Pontos Disponibilidade Total" [ref=e328]:
+                  - columnheader "Mês" [ref=e329]
+                  - columnheader "Pontos" [ref=e330]
+                  - columnheader "Disponibilidade" [ref=e331]
+                  - columnheader "Total" [ref=e332]
+              - rowgroup [ref=e333]:
+                - row "março de 2026 34 100.00% R$ 3.200,00" [ref=e334]:
+                  - cell "março de 2026" [ref=e335]
+                  - cell "34" [ref=e336]
+                  - cell "100.00%" [ref=e337]
+                  - cell "R$ 3.200,00" [ref=e338]
+  - alert [ref=e96]
+  - generic [ref=e339]: "0"
