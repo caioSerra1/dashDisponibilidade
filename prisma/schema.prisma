@@ -121,24 +121,34 @@ enum GoalPeriod {
   CONTINUOUS
 }
 
+enum GoalCategory {
+  METRIC
+  MILESTONE
+}
+
 model Goal {
-  id          String     @id @default(cuid())
+  id          String       @id @default(cuid())
   userId      String
+  category    GoalCategory @default(METRIC)
   kind        GoalKind
-  period      GoalPeriod @default(MONTH)
-  target      Float
-  coinsReward Int        @default(0)
+  period      GoalPeriod   @default(MONTH)
+  target      Float        @default(0)
+  coinsReward Int          @default(0)
   label       String?
-  active      Boolean    @default(true)
-  renewable   Boolean    @default(true)
+  description String?
+  icon        String?
+  rule        Json?
+  active      Boolean      @default(true)
+  renewable   Boolean      @default(true)
   endedAt     DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
 
   user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   hits GoalHit[]
 
   @@index([userId, period, active])
+  @@index([userId, category, active])
 }
 
 model GoalHit {

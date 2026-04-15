@@ -5,17 +5,41 @@ import { prisma } from "@/lib/db";
 
 const KIND = z.enum(["POINTS", "TASKS_CLOSED", "SLA", "AVG_RESOLUTION", "CUSTOM"]);
 const PERIOD = z.enum(["MONTH", "WEEK", "CONTINUOUS"]);
+const CATEGORY = z.enum(["METRIC", "MILESTONE"]);
 
-const createSchema = z.object({
-  userId: z.string().min(1),
-  kind: KIND,
-  period: PERIOD,
-  target: z.number().positive(),
-  coinsReward: z.number().int().nonnegative(),
-  label: z.string().optional(),
-  renewable: z.boolean().optional(),
-  active: z.boolean().optional(),
-});
+const MILESTONE_RULE = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("SLA_MIN"), value: z.number().min(0).max(100) }),
+  z.object({ type: z.literal("POINTS_MIN_MONTH"), value: z.number().min(0) }),
+  z.object({ type: z.literal("FIRST_MONTH_CLOSED") }),
+  z.object({ type: z.literal("GOAL_HITS_IN_MONTH"), value: z.number().int().min(0) }),
+  z.object({ type: z.literal("CYCLE_HOURS_MAX"), value: z.number().min(0) }),
+  z.object({ type: z.literal("RESOLUTION_HOURS_MAX"), value: z.number().min(0) }),
+  z.object({ type: z.literal("TASKS_CLOSED_MIN_MONTH"), value: z.number().int().min(0) }),
+]);
+
+const createSchema = z
+  .object({
+    userId: z.string().min(1),
+    category: CATEGORY.default("METRIC"),
+    kind: KIND.default("CUSTOM"),
+    period: PERIOD.default("MONTH"),
+    target: z.number().nonnegative().default(0),
+    coinsReward: z.number().int().nonnegative(),
+    label: z.string().optional(),
+    description: z.string().optional(),
+    icon: z.string().optional(),
+    rule: MILESTONE_RULE.optional(),
+    renewable: z.boolean().optional(),
+    active: z.boolean().optional(),
+  })
+  .refine(
+    (data) => data.category !== "METRIC" || data.target > 0,
+    { message: "target deve ser maior que 0 para metas categoria METRIC", path: ["target"] },
+  )
+  .refine(
+    (data) => data.category !== "MILESTONE" || data.rule != null,
+    { message: "rule é obrigatório para metas categoria MILESTONE", path: ["rule"] },
+  );
 
 async function requireAdmin() {
   const s = await auth();

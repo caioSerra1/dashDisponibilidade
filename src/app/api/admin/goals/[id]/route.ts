@@ -3,12 +3,26 @@ import { z } from "zod";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
+const MILESTONE_RULE = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("SLA_MIN"), value: z.number().min(0).max(100) }),
+  z.object({ type: z.literal("POINTS_MIN_MONTH"), value: z.number().min(0) }),
+  z.object({ type: z.literal("FIRST_MONTH_CLOSED") }),
+  z.object({ type: z.literal("GOAL_HITS_IN_MONTH"), value: z.number().int().min(0) }),
+  z.object({ type: z.literal("CYCLE_HOURS_MAX"), value: z.number().min(0) }),
+  z.object({ type: z.literal("RESOLUTION_HOURS_MAX"), value: z.number().min(0) }),
+  z.object({ type: z.literal("TASKS_CLOSED_MIN_MONTH"), value: z.number().int().min(0) }),
+]);
+
 const patchSchema = z.object({
+  category: z.enum(["METRIC", "MILESTONE"]).optional(),
   kind: z.enum(["POINTS", "TASKS_CLOSED", "SLA", "AVG_RESOLUTION", "CUSTOM"]).optional(),
   period: z.enum(["MONTH", "WEEK", "CONTINUOUS"]).optional(),
-  target: z.number().positive().optional(),
+  target: z.number().nonnegative().optional(),
   coinsReward: z.number().int().nonnegative().optional(),
   label: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  icon: z.string().nullable().optional(),
+  rule: MILESTONE_RULE.nullable().optional(),
   renewable: z.boolean().optional(),
   active: z.boolean().optional(),
   // allow reopening an ended goal

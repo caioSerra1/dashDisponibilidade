@@ -1,7 +1,8 @@
-import type { GoalKind, GoalPeriod } from "@prisma/client";
+import type { GoalCategory, GoalKind, GoalPeriod } from "@prisma/client";
 
 export interface GoalLike {
   id: string;
+  category: GoalCategory;
   kind: GoalKind;
   period: GoalPeriod;
   target: number;
@@ -31,11 +32,12 @@ export interface HitCheck {
 }
 
 /**
- * Puro: dado o contexto de métricas e as metas ativas,
- * retorna quais metas foram cumpridas AGORA.
+ * Puro: dado o contexto de métricas e as metas ativas categoria METRIC,
+ * retorna quais foram cumpridas AGORA.
  * O caller verifica idempotência em GoalHit antes de creditar.
  *
- * Metas com `endedAt` preenchido ou `active=false` são ignoradas.
+ * Metas com `endedAt` preenchido, `active=false` ou `category=MILESTONE`
+ * são ignoradas — marcos são avaliados em `src/lib/milestones.ts`.
  */
 export function evaluateGoals(
   goals: readonly GoalLike[],
@@ -44,6 +46,7 @@ export function evaluateGoals(
   return goals.filter((g) => {
     if (!g.active) return false;
     if (g.endedAt != null) return false;
+    if (g.category !== "METRIC") return false;
     switch (g.kind) {
       case "POINTS":
         return metrics.pontosMes >= g.target;

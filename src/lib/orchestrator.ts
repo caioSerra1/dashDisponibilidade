@@ -8,8 +8,9 @@ import {
 } from "./clickup";
 import { getAvailability, listHosts } from "./zabbix";
 import { computePartial } from "./calculate";
-import { computeTaskMetrics, type RichTask } from "./metrics";
+import { computeTaskMetrics, type RichTask, type TaskMetrics } from "./metrics";
 import { evaluateGoals } from "./goals";
+import { evaluateMilestones, type MilestoneContext, type MilestoneRule } from "./milestones";
 import { credit } from "./wallet";
 import { monthRange, currentMonth } from "./date";
 
@@ -248,7 +249,7 @@ async function maybeCreditGoals(
   },
 ) {
   const goals = await prisma.goal.findMany({
-    where: { userId, active: true, endedAt: null },
+    where: { userId, category: "METRIC", active: true, endedAt: null },
   });
   const hits = evaluateGoals(goals, metricsCtx);
   for (const goal of hits) {
@@ -336,6 +337,13 @@ export async function runClose(target?: { year: number; month: number }): Promis
           valorTotal: result.valorParcial,
         },
       });
+
+      await maybeCreditMilestones(user.id, ref.year, ref.month, {
+        pontos,
+        slaFinal: slaMedio,
+        metrics,
+      });
+
       closed += 1;
     }
 
@@ -350,6 +358,92 @@ export async function runClose(target?: { year: number; month: number }): Promis
       data: { finishedAt: new Date(), status: "error", message: (e as Error).message },
     });
     throw e;
+  }
+}
+
+/**
+ * Avalia metas categoria MILESTONE no fechamento mensal e credita quem bateu.
+ *
+ * Idempotente: verifica GoalHit antes de criar. Metas não renováveis são
+ * encerradas (`endedAt`) após a primeira batida.
+ */
+async function maybeCreditMilestones(
+  userId: string,
+  year: number,
+  month: number,
+  ctx: {
+    pontos: number;
+    slaFinal: number;
+    metrics: TaskMetrics;
+  },
+) {
+  const milestones = await prisma.goal.findMany({
+    where: { userId, category: "MILESTONE", active: true, endedAt: null },
+  });
+  if (milestones.length === 0) return;
+
+  const [priorCloses, goalHitsInMonth] = await Promise.all([
+    prisma.monthlyClose.count({
+      where: { userId, NOT: { year, month } },
+    }),
+    prisma.goalHit.count({
+      where: { goal: { userId, category: "METRIC" }, year, month },
+    }),
+  ]);
+
+  const evalCtx: MilestoneContext = {
+    slaFinal: ctx.slaFinal,
+    pontosMes: ctx.pontos,
+    hasClosedBefore: priorCloses > 0,
+    goalHitsInMonth,
+    metrics: {
+      avgCycleHours: ctx.metrics.avgCycleHours,
+      avgResolutionHours: ctx.metrics.avgResolutionHours,
+      tasksClosed: ctx.metrics.tasksClosed,
+    },
+  };
+
+  const candidates = milestones.map((m) => ({
+    id: m.id,
+    rule: (m.rule ?? null) as MilestoneRule | null,
+  }));
+  const hits = evaluateMilestones(candidates, evalCtx);
+  const hitIds = new Set(hits.map((h) => h.id));
+
+  for (const goal of milestones) {
+    if (!hitIds.has(goal.id)) continue;
+
+    const existing = await prisma.goalHit.findFirst({
+      where: { goalId: goal.id, year, month, week: null },
+    });
+    if (existing) continue;
+
+    await prisma.goalHit.create({
+      data: {
+        goalId: goal.id,
+        year,
+        month,
+        week: null,
+        coinsPaid: goal.coinsReward,
+      },
+    });
+    if (goal.coinsReward > 0) {
+      await credit({
+        userId,
+        amount: goal.coinsReward,
+        reason: `milestone:${goal.id}`,
+        refType: "milestone",
+        refId: goal.id,
+      });
+    }
+    // Marcos não renováveis encerram após bater uma vez — marcos tipicamente
+    // são definitivos, mas deixamos o admin controlar via `renewable`.
+    if (!goal.renewable) {
+      await prisma.goal.update({
+        where: { id: goal.id },
+        data: { endedAt: new Date() },
+      });
+    }
   }
 }
 

@@ -10,6 +10,7 @@ const ctx: GoalMetricsCtx = {
 };
 
 const base = {
+  category: "METRIC",
   active: true,
   renewable: true,
   endedAt: null,
@@ -90,6 +91,21 @@ describe("evaluateGoals", () => {
   it("CUSTOM nunca auto-desbloqueia", () => {
     const goals: GoalLike[] = [
       { ...base, id: "c", kind: "CUSTOM", period: "MONTH", target: 1, coinsReward: 50 },
+    ];
+    expect(evaluateGoals(goals, ctx)).toEqual([]);
+  });
+
+  it("MILESTONE é ignorado (avaliado por milestones.ts, não por evaluateGoals)", () => {
+    const goals: GoalLike[] = [
+      {
+        ...base,
+        category: "MILESTONE",
+        id: "ms",
+        kind: "POINTS",
+        period: "MONTH",
+        target: 1,
+        coinsReward: 50,
+      },
     ];
     expect(evaluateGoals(goals, ctx)).toEqual([]);
   });
