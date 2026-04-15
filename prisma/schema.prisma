@@ -35,6 +35,22 @@ model User {
   redemptions       Redemption[]
   taskMetrics       TaskMetricSnapshot[]
   notifications     Notification[]
+  notes             UserNote[] @relation("UserNotes")
+  authoredNotes     UserNote[] @relation("AuthoredNotes")
+}
+
+model UserNote {
+  id         String   @id @default(cuid())
+  userId     String
+  authorId   String
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user   User @relation("UserNotes", fields: [userId], references: [id], onDelete: Cascade)
+  author User @relation("AuthoredNotes", fields: [authorId], references: [id])
+
+  @@index([userId, createdAt])
 }
 
 model Config {

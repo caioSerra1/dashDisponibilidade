@@ -62,16 +62,21 @@ function plural(n: number, singular: string, plural: string): string {
   return `${n} ${n === 1 ? singular : plural}`;
 }
 
-export function DashboardView() {
+export function DashboardView({
+  viewingUser,
+}: {
+  viewingUser?: { id: string; name: string };
+}) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/dashboard")
+    const url = viewingUser ? `/api/dashboard?userId=${viewingUser.id}` : "/api/dashboard";
+    fetch(url)
       .then((r) => r.json())
       .then((d: DashboardData) => setData(d))
       .finally(() => setLoading(false));
-  }, []);
+  }, [viewingUser]);
 
   if (loading) return <DashboardSkeleton />;
   if (!data) return <p className="text-destructive">Erro ao carregar dados.</p>;
@@ -85,6 +90,25 @@ export function DashboardView() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
+      {viewingUser && (
+        <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Visualização administrativa
+            </p>
+            <p className="text-sm mt-0.5">
+              Você está vendo o painel de <strong>{viewingUser.name}</strong>
+            </p>
+          </div>
+          <a
+            href="/mural"
+            className="text-xs text-primary hover:underline"
+          >
+            ← voltar pro mural
+          </a>
+        </div>
+      )}
+
       {/* HERO */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
@@ -98,7 +122,8 @@ export function DashboardView() {
               <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm text-muted-foreground">
-                    Sua variável parcial de {monthLabel}
+                    {viewingUser ? `Variável parcial de ${viewingUser.name}` : "Sua variável parcial"} —{" "}
+                    {monthLabel}
                   </p>
                   <p className="text-4xl md:text-5xl font-bold mt-1 text-primary tracking-tight">
                     {formatBRL(parcial?.valorParcial ?? 0)}

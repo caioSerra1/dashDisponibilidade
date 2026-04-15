@@ -53,16 +53,21 @@ const memberItems: NavItem[] = [
   { href: "/tasks", label: "Tasks", icon: ListChecks },
   { href: "/metas", label: "Minhas Metas", icon: Target },
   { href: "/loja", label: "Loja", icon: ShoppingBag },
-  { href: "/mural", label: "Mural", icon: Sparkles },
   { href: "/notificacoes", label: "Notificações", icon: Bell },
   { href: "/perfil", label: "Perfil", icon: UserCircle },
 ];
 
 const adminGroups: NavGroup[] = [
   {
+    label: "Equipe",
+    items: [
+      { href: "/mural", label: "Mural de performance", icon: Sparkles },
+      { href: "/admin/users", label: "Usuários", icon: Users },
+    ],
+  },
+  {
     label: "Cadastros",
     items: [
-      { href: "/admin/users", label: "Usuários", icon: Users },
       { href: "/admin/goals", label: "Metas", icon: Target },
       { href: "/admin/loja/itens", label: "Itens da Loja", icon: Package },
     ],

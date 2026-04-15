@@ -1,102 +1,397 @@
 "use client";
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import {
+  Sparkles,
+  TrendingUp,
+  AlertTriangle,
+  FileText,
+  ExternalLink,
+  Users,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { formatMonth } from "@/lib/date";
+import { Button } from "@/components/ui/button";
+import { MetricLabel } from "@/components/ui/metric-label";
+import { PeriodPicker } from "@/components/filters/period-picker";
+import { TeamHeatmap } from "@/components/admin/team-heatmap";
+import { BacklogAgingChart } from "@/components/admin/backlog-aging-chart";
+import { OneOnOneModal } from "@/components/admin/one-on-one-modal";
+import type { BacklogAging } from "@/lib/team-metrics";
 
-interface MuralCardData {
-  user: { id: string; name: string; email: string; bio: string | null };
-  pontos: number;
-  sla: number;
-  coinsGained: number;
-  isClosed: boolean;
+interface MemberCard {
+  userId: string;
+  name: string;
+  pontosDev: number;
+  tasksDev: number;
+  tasksSuporte: number;
+  slaAvg: number;
+  mttrHoras: number | null;
+  mttaHoras: number | null;
+  wipAtual: number;
+  backlogAging: BacklogAging;
+  retornosExecucao: number;
+  metasBatidas: number;
+  marcosBatidos: number;
+  alertaAnomalia: boolean;
+  temAnotacaoPrivada: boolean;
+  scoreEvolucao: number;
+  deltaEvolucao: {
+    pontosDev: number;
+    tasksDev: number;
+    slaAvg: number;
+    avgResolutionHours: number | null;
+  };
 }
 
-interface MuralData {
-  month: { year: number; month: number };
-  cards: MuralCardData[];
+interface MuralPayload {
+  periodo: { modo: string; de: string; ate: string; label: string };
+  kpisEquipe: {
+    pontosDev: number;
+    tasksDev: number;
+    tasksSuporte: number;
+    slaMedio: number;
+    mttrMedio: number | null;
+    mttaMedio: number | null;
+    wipAtual: number;
+    throughputPorSemana: number;
+    retornosExecucao: number;
+    equidade: { score: number; label: string };
+    backlogAging: BacklogAging;
+  };
+  destaqueEvolucao: {
+    userId: string;
+    name: string;
+    scoreEvolucao: number;
+    delta: {
+      pontosDev: number;
+      tasksDev: number;
+      slaAvg: number;
+      avgResolutionHours: number | null;
+    };
+  } | null;
+  membros: MemberCard[];
+  heatmap: number[][];
 }
 
 export function MuralView() {
-  const [data, setData] = useState<MuralData | null>(null);
+  const searchParams = useSearchParams();
+  const [data, setData] = useState<MuralPayload | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeMember, setActiveMember] = useState<MemberCard | null>(null);
+
+  const query = useMemo(() => searchParams.toString(), [searchParams]);
 
   useEffect(() => {
-    fetch("/api/mural")
+    setLoading(true);
+    fetch(`/api/mural?${query}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: MuralData) => setData(d))
+      .then((d: MuralPayload) => setData(d))
       .finally(() => setLoading(false));
-  }, []);
-
-  if (loading) return <p className="text-muted-foreground">Carregando…</p>;
-  if (!data) return <p className="text-destructive">Erro ao carregar mural.</p>;
+  }, [query]);
 
   return (
-    <div className="space-y-6 max-w-6xl">
-      <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Sparkles className="h-6 w-6 text-primary" />
-          Mural do time
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Ranking e progresso de {formatMonth(data.month.year, data.month.month)}.
-        </p>
+    <div className="space-y-6 max-w-7xl mx-auto w-full">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Sparkles className="h-6 w-6 text-primary" />
+            Gestão de Performance
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Visão consolidada da equipe — {data?.periodo.label ?? "carregando…"}
+          </p>
+        </div>
+        <PeriodPicker />
       </div>
 
-      {data.cards.length === 0 ? (
-        <Card>
-          <CardContent className="p-8 text-center text-muted-foreground">
-            Nenhum colaborador ativo ainda.
-          </CardContent>
-        </Card>
+      {loading || !data ? (
+        <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
-          {data.cards.map((card, idx) => (
-            <MuralCard key={card.user.id} card={card} rank={idx} />
-          ))}
-        </div>
+        <>
+          <TeamKpis kpis={data.kpisEquipe} />
+
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <TrendingUp className="h-4 w-4 text-primary" />
+                  Heatmap de atividade
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Tasks fechadas por dia da semana × hora do dia
+                </p>
+              </CardHeader>
+              <CardContent>
+                <TeamHeatmap grid={data.heatmap} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Backlog aberto</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Distribuição por idade (dias)
+                </p>
+              </CardHeader>
+              <CardContent>
+                <BacklogAgingChart data={data.kpisEquipe.backlogAging} />
+              </CardContent>
+            </Card>
+          </div>
+
+          {data.destaqueEvolucao && <DestaqueEvolucao destaque={data.destaqueEvolucao} />}
+
+          <div>
+            <h3 className="text-lg font-semibold flex items-center gap-2 mb-3">
+              <Users className="h-5 w-5 text-primary" />
+              Colaboradores ({data.membros.length})
+            </h3>
+            {data.membros.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center text-muted-foreground">
+                  Nenhum colaborador ativo no mural.
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2">
+                {data.membros.map((m) => (
+                  <MemberCardBlock
+                    key={m.userId}
+                    member={m}
+                    onOpen1on1={() => setActiveMember(m)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </>
       )}
+
+      <OneOnOneModal
+        open={activeMember !== null}
+        onClose={() => setActiveMember(null)}
+        member={activeMember}
+      />
     </div>
   );
 }
 
-function MuralCard({ card, rank }: { card: MuralCardData; rank: number }) {
+function TeamKpis({ kpis }: { kpis: MuralPayload["kpisEquipe"] }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 12 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: rank * 0.08 }}
-    >
-      <Card>
-        <CardHeader className="flex flex-row items-start gap-4">
-          <Avatar userId={card.user.id} name={card.user.name} size={64} />
-          <div className="flex-1 min-w-0">
-            <CardTitle className="truncate">{card.user.name}</CardTitle>
-            <p className="text-xs text-muted-foreground truncate">{card.user.email}</p>
-            {card.user.bio && <p className="text-xs mt-1 italic">{card.user.bio}</p>}
-          </div>
-          {card.isClosed && <Badge variant="success">fechado</Badge>}
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <Stat label="Pontos" value={String(card.pontos)} />
-            <Stat label="Disponibilidade" value={`${card.sla.toFixed(1)}%`} />
-            <Stat label="Moedas no mês" value={`+${card.coinsGained}`} />
-          </div>
-        </CardContent>
-      </Card>
-    </motion.div>
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <KpiCard
+        sigla="Pontos (dev)"
+        nome="Pontos de sprint entregues"
+        value={String(kpis.pontosDev)}
+      />
+      <KpiCard
+        sigla="Tasks dev"
+        nome="Tasks de desenvolvimento fechadas"
+        value={String(kpis.tasksDev)}
+        helper={`+${kpis.tasksSuporte} tasks de suporte`}
+      />
+      <KpiCard
+        sigla="SLA"
+        nome="Disponibilidade média acordada"
+        value={`${kpis.slaMedio.toFixed(1)}%`}
+      />
+      <KpiCard
+        sigla="MTTR"
+        nome="Tempo médio até resolver uma demanda"
+        value={kpis.mttrMedio != null ? `${kpis.mttrMedio}h` : "—"}
+      />
+      <KpiCard
+        sigla="MTTA"
+        nome="Tempo médio até assumir uma demanda (suporte)"
+        value={kpis.mttaMedio != null ? `${kpis.mttaMedio}h` : "—"}
+      />
+      <KpiCard
+        sigla="WIP"
+        nome="Tasks em andamento ao mesmo tempo"
+        value={String(kpis.wipAtual)}
+      />
+      <KpiCard
+        sigla="Throughput"
+        nome="Tasks dev fechadas por semana"
+        value={`${kpis.throughputPorSemana}/sem`}
+      />
+      <KpiCard
+        sigla="Equidade"
+        nome="Distribuição de carga entre membros"
+        value={kpis.equidade.label}
+        helper={`score ${kpis.equidade.score}`}
+      />
+    </div>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function KpiCard({
+  sigla,
+  nome,
+  value,
+  helper,
+}: {
+  sigla: string;
+  nome: string;
+  value: string;
+  helper?: string;
+}) {
   return (
-    <div className="rounded-md border bg-card/50 p-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-base font-bold mt-0.5">{value}</p>
+    <Card>
+      <CardContent className="p-4">
+        <MetricLabel sigla={sigla} nome={nome} />
+        <p className="text-2xl font-bold mt-2 whitespace-nowrap">{value}</p>
+        {helper && (
+          <p className="text-[11px] text-muted-foreground mt-0.5">{helper}</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DestaqueEvolucao({
+  destaque,
+}: {
+  destaque: NonNullable<MuralPayload["destaqueEvolucao"]>;
+}) {
+  const { delta } = destaque;
+  return (
+    <Card className="border-primary/30 bg-gradient-to-br from-primary/8 via-transparent to-success/5">
+      <CardContent className="p-5">
+        <div className="flex items-start gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary">
+            <TrendingUp className="h-7 w-7" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Maior evolução do período
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              <Avatar userId={destaque.userId} name={destaque.name} size={28} />
+              <p className="text-lg font-bold truncate">{destaque.name}</p>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-3">
+              {delta.pontosDev > 0 && (
+                <Badge variant="success">+{delta.pontosDev} pontos</Badge>
+              )}
+              {delta.tasksDev > 0 && (
+                <Badge variant="success">+{delta.tasksDev} tasks</Badge>
+              )}
+              {delta.slaAvg >= 0.1 && (
+                <Badge variant="success">SLA +{delta.slaAvg.toFixed(1)}pp</Badge>
+              )}
+              {delta.avgResolutionHours != null && delta.avgResolutionHours < 0 && (
+                <Badge variant="success">
+                  MTTR −{Math.abs(delta.avgResolutionHours).toFixed(1)}h
+                </Badge>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MemberCardBlock({
+  member,
+  onOpen1on1,
+}: {
+  member: MemberCard;
+  onOpen1on1: () => void;
+}) {
+  return (
+    <Card className={member.alertaAnomalia ? "border-warning/60" : ""}>
+      <CardHeader className="flex flex-row items-start gap-3 pb-3">
+        <Avatar userId={member.userId} name={member.name} size={48} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <CardTitle className="text-base truncate">{member.name}</CardTitle>
+            {member.alertaAnomalia && (
+              <Badge variant="warning" className="gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                Atenção
+              </Badge>
+            )}
+            {member.temAnotacaoPrivada && (
+              <FileText
+                className="h-4 w-4 text-muted-foreground"
+                aria-label="tem anotação privada"
+              />
+            )}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <MiniStat label="Pontos dev" value={String(member.pontosDev)} />
+          <MiniStat label="Tasks dev" value={String(member.tasksDev)} />
+          <MiniStat label="Suporte" value={String(member.tasksSuporte)} />
+          <MiniStat label="SLA" value={`${member.slaAvg.toFixed(0)}%`} />
+        </div>
+        <div className="grid grid-cols-4 gap-2 text-center">
+          <MiniStat
+            label="MTTR"
+            value={member.mttrHoras != null ? `${member.mttrHoras.toFixed(0)}h` : "—"}
+          />
+          <MiniStat
+            label="MTTA"
+            value={member.mttaHoras != null ? `${member.mttaHoras.toFixed(0)}h` : "—"}
+          />
+          <MiniStat label="WIP" value={String(member.wipAtual)} />
+          <MiniStat label="Retornos" value={String(member.retornosExecucao)} />
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          {member.marcosBatidos > 0 && (
+            <Badge variant="secondary">
+              {member.marcosBatidos} marco{member.marcosBatidos > 1 ? "s" : ""}
+            </Badge>
+          )}
+          {member.metasBatidas > 0 && (
+            <Badge variant="secondary">
+              {member.metasBatidas} meta{member.metasBatidas > 1 ? "s" : ""}
+            </Badge>
+          )}
+          {member.retornosExecucao > 0 && (
+            <Badge variant="outline">
+              {member.retornosExecucao} retorno{member.retornosExecucao > 1 ? "s" : ""}
+            </Badge>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 pt-2 border-t">
+          <Button
+            size="sm"
+            variant={member.alertaAnomalia ? "default" : "outline"}
+            onClick={onOpen1on1}
+            className="flex-1"
+          >
+            <FileText className="h-4 w-4" />
+            Preparar 1:1
+          </Button>
+          <Button size="sm" variant="outline" asChild>
+            <Link href={`/dashboard?userId=${member.userId}`}>
+              <ExternalLink className="h-4 w-4" />
+              Ver dashboard
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border bg-card/50 p-1.5">
+      <p className="text-[9px] text-muted-foreground uppercase tracking-wide">
+        {label}
+      </p>
+      <p className="text-sm font-semibold tabular-nums">{value}</p>
     </div>
   );
 }
