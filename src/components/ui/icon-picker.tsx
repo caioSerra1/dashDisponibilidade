@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { LUCIDE_ICONS, EMOJIS, parseIconValue } from "@/lib/achievement-icons";
+import { LUCIDE_ICONS, EMOJIS, parseIconValue } from "@/lib/goal-icons";
 import { cn } from "@/lib/cn";
 
 interface IconPickerProps {
@@ -100,7 +100,7 @@ function TabButton({
 }
 
 /**
- * Renderiza o ícone/emoji escolhido no valor do Achievement.
+ * Renderiza o ícone/emoji escolhido no valor guardado.
  * Use `className` pra ajustar tamanho.
  */
 export function RenderIcon({

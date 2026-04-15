@@ -5,7 +5,6 @@ export interface AppConfig {
   valorPorPonto: number;
   metaPontosMes: number;
   metaSlaStreak: number;
-  gamificationEnabled: boolean;
   /**
    * Nomes de status do ClickUp que contam como "em execução".
    * O tempo de resolução das tasks só é contabilizado a partir do momento
@@ -29,7 +28,6 @@ const DEFAULTS: AppConfig = {
   valorPorPonto: 50,
   metaPontosMes: 40,
   metaSlaStreak: 99,
-  gamificationEnabled: true,
   executionStatuses: DEFAULT_EXECUTION_STATUSES,
 };
 
@@ -59,7 +57,6 @@ export async function loadConfig(): Promise<AppConfig> {
     valorPorPonto: num("valorPorPonto"),
     metaPontosMes: num("metaPontosMes"),
     metaSlaStreak: num("metaSlaStreak"),
-    gamificationEnabled: (map.get("gamificationEnabled") ?? "true") === "true",
     executionStatuses,
   };
 }

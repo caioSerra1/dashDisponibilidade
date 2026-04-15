@@ -16,39 +16,7 @@ const DEFAULT_CONFIG: Record<string, string> = {
   valorPorPonto: "50",
   metaPontosMes: "40",
   metaSlaStreak: "99",
-  gamificationEnabled: "true",
 };
-
-// Conquistas iniciais com regra declarativa (admin pode editar/criar mais pela UI)
-const ACHIEVEMENTS = [
-  {
-    code: "FIRST_MONTH_CLOSED",
-    name: "Primeiro mês fechado",
-    description: "Você fechou seu primeiro mês de apuração.",
-    icon: "lucide:sparkles",
-    xp: 50,
-    coinsReward: 20,
-    rule: { type: "FIRST_MONTH_CLOSED" },
-  },
-  {
-    code: "SLA_100",
-    name: "Disponibilidade Perfeita",
-    description: "Fechou um mês com 100% de disponibilidade.",
-    icon: "lucide:shield-check",
-    xp: 200,
-    coinsReward: 100,
-    rule: { type: "SLA_MIN", value: 100 },
-  },
-  {
-    code: "POINTS_GOAL",
-    name: "Meta de pontos batida",
-    description: "Atingiu a meta mensal de pontos de sprint.",
-    icon: "lucide:target",
-    xp: 150,
-    coinsReward: 80,
-    rule: { type: "POINTS_MIN_MONTH", value: 40 },
-  },
-];
 
 async function main() {
   for (const [key, value] of Object.entries(DEFAULT_CONFIG)) {
@@ -62,21 +30,6 @@ async function main() {
   const existingTiers = await prisma.slaTier.count();
   if (existingTiers === 0) {
     await prisma.slaTier.createMany({ data: DEFAULT_SLA_TIERS });
-  }
-
-  for (const ach of ACHIEVEMENTS) {
-    await prisma.achievement.upsert({
-      where: { code: ach.code },
-      update: {
-        name: ach.name,
-        description: ach.description,
-        icon: ach.icon,
-        xp: ach.xp,
-        coinsReward: ach.coinsReward,
-        rule: ach.rule,
-      },
-      create: ach,
-    });
   }
 
   const adminEmail = process.env.SEED_ADMIN_EMAIL ?? "admin@local.test";

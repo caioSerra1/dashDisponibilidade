@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, ShoppingBag, Trophy, Target, Megaphone, Check, CheckCheck } from "lucide-react";
+import { Bell, ShoppingBag, Target, Megaphone, Check, CheckCheck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/cn";
@@ -9,7 +9,7 @@ import { formatDate } from "@/lib/date";
 
 interface NotificationItem {
   id: string;
-  type: "SYSTEM" | "REDEMPTION" | "GOAL" | "ACHIEVEMENT" | "BROADCAST";
+  type: "SYSTEM" | "REDEMPTION" | "GOAL" | "BROADCAST";
   title: string;
   body: string | null;
   href: string | null;
@@ -21,7 +21,6 @@ const ICON: Record<NotificationItem["type"], React.ComponentType<{ className?: s
   SYSTEM: Bell,
   REDEMPTION: ShoppingBag,
   GOAL: Target,
-  ACHIEVEMENT: Trophy,
   BROADCAST: Megaphone,
 };
 
@@ -29,7 +28,6 @@ const TYPE_LABEL: Record<NotificationItem["type"], string> = {
   SYSTEM: "Sistema",
   REDEMPTION: "Loja",
   GOAL: "Meta",
-  ACHIEVEMENT: "Conquista",
   BROADCAST: "Aviso",
 };
 

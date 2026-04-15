@@ -29,7 +29,6 @@ model User {
 
   dailySnapshots    DailySnapshot[]
   monthlyCloses     MonthlyClose[]
-  userAchievements  UserAchievement[]
   goals             Goal[]
   wallet            Wallet?
   coinTxns          CoinTxn[]
@@ -93,35 +92,6 @@ model MonthlyClose {
 
   @@unique([userId, year, month])
   @@index([year, month])
-}
-
-model Achievement {
-  id          String  @id @default(cuid())
-  code        String  @unique
-  name        String
-  description String
-  icon        String
-  xp          Int     @default(0)
-  coinsReward Int     @default(0)
-  rule        Json?    // { type, value? } — interpretado em src/lib/achievement-rules.ts
-  active      Boolean @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @default(now()) @updatedAt
-
-  userAchievements UserAchievement[]
-}
-
-model UserAchievement {
-  id             String   @id @default(cuid())
-  userId         String
-  achievementId  String
-  unlockedAt     DateTime @default(now())
-
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  achievement Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, achievementId])
-  @@index([userId, unlockedAt])
 }
 
 model JobRun {
@@ -277,7 +247,6 @@ enum NotificationType {
   SYSTEM
   REDEMPTION
   GOAL
-  ACHIEVEMENT
   BROADCAST
 }
 

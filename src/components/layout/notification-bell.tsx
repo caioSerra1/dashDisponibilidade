@@ -1,14 +1,14 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Bell, Check, CheckCheck, Megaphone, Trophy, Target, ShoppingBag } from "lucide-react";
+import { Bell, Check, CheckCheck, Megaphone, Target, ShoppingBag } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/cn";
 import { formatDate } from "@/lib/date";
 
 interface NotificationItem {
   id: string;
-  type: "SYSTEM" | "REDEMPTION" | "GOAL" | "ACHIEVEMENT" | "BROADCAST";
+  type: "SYSTEM" | "REDEMPTION" | "GOAL" | "BROADCAST";
   title: string;
   body: string | null;
   href: string | null;
@@ -20,7 +20,6 @@ const ICON: Record<NotificationItem["type"], React.ComponentType<{ className?: s
   SYSTEM: Bell,
   REDEMPTION: ShoppingBag,
   GOAL: Target,
-  ACHIEVEMENT: Trophy,
   BROADCAST: Megaphone,
 };
 

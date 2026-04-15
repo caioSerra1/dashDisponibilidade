@@ -22,12 +22,7 @@ export async function GET(request: Request) {
     select: { id: true, name: true, email: true, avatarPath: true, profileBio: true },
   });
 
-  const [achievements, snapshots, closes, txns] = await Promise.all([
-    prisma.userAchievement.findMany({
-      where: { unlockedAt: { gte: from, lte: to } },
-      include: { achievement: true },
-      orderBy: { unlockedAt: "desc" },
-    }),
+  const [snapshots, closes, txns] = await Promise.all([
     prisma.dailySnapshot.findMany({
       where: { date: { gte: from, lte: to } },
       orderBy: { date: "desc" },
@@ -50,28 +45,14 @@ export async function GET(request: Request) {
     coinsByUser.set(t.userId, (coinsByUser.get(t.userId) ?? 0) + t.delta);
   }
 
-  // Achievements grouped per user
-  const achByUser = new Map<string, typeof achievements>();
-  for (const a of achievements) {
-    if (!achByUser.has(a.userId)) achByUser.set(a.userId, []);
-    achByUser.get(a.userId)!.push(a);
-  }
-
   const cards = users.map((u) => {
     const snap = lastSnap.get(u.id);
     const close = closes.find((c) => c.userId === u.id);
-    const userAchs = achByUser.get(u.id) ?? [];
     return {
       user: { id: u.id, name: u.name, email: u.email, bio: u.profileBio },
       pontos: snap?.pontosAcumulados ?? close?.pontos ?? 0,
       sla: snap?.slaMedioMes ?? close?.slaFinal ?? 0,
       coinsGained: coinsByUser.get(u.id) ?? 0,
-      achievements: userAchs.map((a) => ({
-        code: a.achievement.code,
-        name: a.achievement.name,
-        icon: a.achievement.icon,
-        unlockedAt: a.unlockedAt,
-      })),
       isClosed: !!close,
     };
   });

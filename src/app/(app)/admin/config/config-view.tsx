@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumberField } from "@/components/ui/number-field";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { formatBRL } from "@/lib/money";
 import { applySlaTiers } from "@/lib/sla-tiers";
 
@@ -19,7 +18,6 @@ interface ConfigState {
   valorPorPonto: number;
   metaPontosMes: number;
   metaSlaStreak: number;
-  gamificationEnabled: boolean;
   executionStatuses: string[];
 }
 
@@ -28,7 +26,6 @@ const DEFAULT: ConfigState = {
   valorPorPonto: 50,
   metaPontosMes: 40,
   metaSlaStreak: 99,
-  gamificationEnabled: true,
   executionStatuses: ["em execução", "em andamento", "in progress"],
 };
 
@@ -104,18 +101,6 @@ export function ConfigView() {
             <NumberField
               value={cfg.metaSlaStreak}
               onChange={(v) => setCfg({ ...cfg, metaSlaStreak: v })}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div>
-              <Label>Conquistas & progresso</Label>
-              <p className="text-xs text-muted-foreground">
-                Ativa sequências, conquistas, XP e animações.
-              </p>
-            </div>
-            <Switch
-              checked={cfg.gamificationEnabled}
-              onCheckedChange={(v) => setCfg({ ...cfg, gamificationEnabled: v })}
             />
           </div>
         </CardContent>

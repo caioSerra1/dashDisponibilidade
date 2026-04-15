@@ -12,7 +12,6 @@ import {
   LogOut,
   Menu,
   X,
-  Trophy,
   Activity,
   Target,
   ShoppingBag,
@@ -20,7 +19,6 @@ import {
   UserCircle,
   Package,
   ClipboardList,
-  Award,
   ChevronDown,
   ListChecks,
   Bell,
@@ -56,7 +54,6 @@ const memberItems: NavItem[] = [
   { href: "/metas", label: "Minhas Metas", icon: Target },
   { href: "/loja", label: "Loja", icon: ShoppingBag },
   { href: "/mural", label: "Mural", icon: Sparkles },
-  { href: "/achievements", label: "Conquistas", icon: Trophy },
   { href: "/notificacoes", label: "Notificações", icon: Bell },
   { href: "/perfil", label: "Perfil", icon: UserCircle },
 ];
@@ -67,7 +64,6 @@ const adminGroups: NavGroup[] = [
     items: [
       { href: "/admin/users", label: "Usuários", icon: Users },
       { href: "/admin/goals", label: "Metas", icon: Target },
-      { href: "/admin/achievements", label: "Conquistas", icon: Award },
       { href: "/admin/loja/itens", label: "Itens da Loja", icon: Package },
     ],
   },

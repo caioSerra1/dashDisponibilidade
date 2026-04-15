@@ -10,7 +10,6 @@ import { getAvailability, listHosts } from "./zabbix";
 import { computePartial } from "./calculate";
 import { computeTaskMetrics, type RichTask } from "./metrics";
 import { evaluateGoals } from "./goals";
-import { evaluateAchievementsRules, type AchievementContext, type AchievementRule } from "./achievement-rules";
 import { credit } from "./wallet";
 import { monthRange, currentMonth } from "./date";
 
@@ -338,16 +337,6 @@ export async function runClose(target?: { year: number; month: number }): Promis
         },
       });
       closed += 1;
-
-      if (config.gamificationEnabled) {
-        await maybeUnlockAchievements(user.id, {
-          year: ref.year,
-          month: ref.month,
-          pontos,
-          slaFinal: slaMedio,
-          metrics,
-        });
-      }
     }
 
     await prisma.jobRun.update({
@@ -361,67 +350,6 @@ export async function runClose(target?: { year: number; month: number }): Promis
       data: { finishedAt: new Date(), status: "error", message: (e as Error).message },
     });
     throw e;
-  }
-}
-
-async function maybeUnlockAchievements(
-  userId: string,
-  ctx: {
-    year: number;
-    month: number;
-    pontos: number;
-    slaFinal: number;
-    metrics: { avgCycleHours: number | null; avgResolutionHours: number | null; tasksClosed: number };
-  },
-) {
-  const prior = await prisma.monthlyClose.count({
-    where: { userId, NOT: { year: ctx.year, month: ctx.month } },
-  });
-  const already = await prisma.userAchievement.findMany({
-    where: { userId },
-    include: { achievement: true },
-  });
-  const alreadyCodes = new Set(already.map((a) => a.achievement.code));
-
-  const goalHitsInMonth = await prisma.goalHit.count({
-    where: { goal: { userId }, year: ctx.year, month: ctx.month },
-  });
-
-  const allAchievements = await prisma.achievement.findMany({ where: { active: true } });
-  const decorated = allAchievements.map((a) => ({
-    id: a.id,
-    code: a.code,
-    rule: (a.rule ?? null) as AchievementRule | null,
-    coinsReward: a.coinsReward,
-  }));
-
-  const evalCtx: AchievementContext = {
-    slaFinal: ctx.slaFinal,
-    pontosMes: ctx.pontos,
-    hasClosedBefore: prior > 0,
-    goalHitsInMonth,
-    metrics: ctx.metrics,
-  };
-
-  const unlocked = evaluateAchievementsRules(decorated, evalCtx, alreadyCodes);
-  for (const ach of unlocked) {
-    const full = decorated.find((d) => d.code === ach.code);
-    try {
-      await prisma.userAchievement.create({
-        data: { userId, achievementId: ach.id },
-      });
-      if (full && full.coinsReward > 0) {
-        await credit({
-          userId,
-          amount: full.coinsReward,
-          reason: `achievement:${ach.code}`,
-          refType: "achievement",
-          refId: ach.id,
-        });
-      }
-    } catch {
-      // já desbloqueado
-    }
   }
 }
 

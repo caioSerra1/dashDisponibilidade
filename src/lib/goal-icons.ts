@@ -29,7 +29,7 @@ import type { ComponentType } from "react";
 
 type IconComp = ComponentType<{ className?: string }>;
 
-/** Ícones lucide-react curados pro catálogo de conquistas. */
+/** Ícones lucide-react curados pro catálogo de metas. */
 export const LUCIDE_ICONS: Record<string, IconComp> = {
   trophy: Trophy,
   "shield-check": ShieldCheck,
@@ -57,7 +57,7 @@ export const LUCIDE_ICONS: Record<string, IconComp> = {
   lightbulb: Lightbulb,
 };
 
-/** Lista de emojis relevantes pra conquistas/gamificação. */
+/** Lista de emojis relevantes pra metas/marcos. */
 export const EMOJIS = [
   "🏆",
   "🎯",
@@ -129,7 +129,6 @@ export function parseIconValue(value: string | null | undefined): {
   if (value.startsWith("lucide:")) {
     return { kind: "lucide", value: value.slice(7) };
   }
-  // Legacy: nome cru do lucide
   return { kind: "lucide", value };
 }
 

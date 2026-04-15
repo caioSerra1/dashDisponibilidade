@@ -23,8 +23,6 @@ import { Badge } from "@/components/ui/badge";
 import { formatBRL } from "@/lib/money";
 import { formatMonth, formatDate } from "@/lib/date";
 import { StreakBadge } from "@/components/game/streak-badge";
-import { LevelRing } from "@/components/game/level-ring";
-import { AchievementsList } from "@/components/game/achievements-list";
 
 interface HostBreakdownEntry {
   hostId: string;
@@ -53,21 +51,10 @@ interface DashboardData {
     valorTotal: number;
     closedAt: string;
   }>;
-  gamification: {
-    enabled: boolean;
-    xp: number;
-    level: { name: "Bronze" | "Prata" | "Ouro" | "Platina"; minXp: number; color: string };
-    streak: number;
+  streak: {
+    dias: number;
     metaSla: number;
     metaPontos: number;
-    achievements: Array<{
-      code: string;
-      name: string;
-      description: string;
-      icon: string;
-      xp: number;
-      unlockedAt: string;
-    }>;
   };
 }
 
@@ -92,7 +79,7 @@ export function DashboardView() {
   const parcial = data.parcial;
   const metaPct = Math.min(
     100,
-    parcial ? (parcial.pontos / Math.max(1, data.gamification.metaPontos)) * 100 : 0,
+    parcial ? (parcial.pontos / Math.max(1, data.streak.metaPontos)) * 100 : 0,
   );
   const monthLabel = formatMonth(data.month.year, data.month.month);
 
@@ -135,9 +122,6 @@ export function DashboardView() {
                     )}
                   </div>
                 </div>
-                {data.gamification.enabled && (
-                  <LevelRing xp={data.gamification.xp} level={data.gamification.level} />
-                )}
               </div>
 
               <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -145,7 +129,7 @@ export function DashboardView() {
                   <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
                     <span>Progresso de pontos</span>
                     <span>
-                      {parcial?.pontos ?? 0} / {data.gamification.metaPontos}
+                      {parcial?.pontos ?? 0} / {data.streak.metaPontos}
                     </span>
                   </div>
                   <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
@@ -260,7 +244,7 @@ export function DashboardView() {
         </Card>
       </div>
 
-      {/* Row 3: Servers + Achievements */}
+      {/* Row 3: Servers + Streak */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -285,20 +269,17 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
-        {data.gamification.enabled && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Trophy className="h-4 w-4 text-primary" />
-                Conquistas
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <StreakBadge days={data.gamification.streak} meta={data.gamification.metaSla} />
-              <AchievementsList items={data.gamification.achievements} />
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Trophy className="h-4 w-4 text-primary" />
+              Sequência de SLA
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <StreakBadge days={data.streak.dias} meta={data.streak.metaSla} />
+          </CardContent>
+        </Card>
       </div>
 
       {/* History */}

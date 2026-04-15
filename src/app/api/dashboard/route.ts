@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { currentMonth, daysInMonth, monthRange } from "@/lib/date";
-import { computeLevel, computeStreak } from "@/lib/gamification";
+import { computeStreak } from "@/lib/gamification";
 import { loadConfig } from "@/lib/config";
 
 export const runtime = "nodejs";
@@ -22,7 +22,7 @@ export async function GET() {
   const { year, month } = currentMonth();
   const { from, to } = monthRange(year, month);
 
-  const [snapshots, history, achievements, config] = await Promise.all([
+  const [snapshots, history, config] = await Promise.all([
     prisma.dailySnapshot.findMany({
       where: { userId, date: { gte: from, lte: to } },
       orderBy: { date: "asc" },
@@ -32,18 +32,11 @@ export async function GET() {
       orderBy: [{ year: "desc" }, { month: "desc" }],
       take: 12,
     }),
-    prisma.userAchievement.findMany({
-      where: { userId },
-      include: { achievement: true },
-      orderBy: { unlockedAt: "desc" },
-    }),
     loadConfig(),
   ]);
 
   const last = snapshots.at(-1);
   const previous = snapshots.length > 1 ? snapshots.at(-2) : null;
-  const xp = history.length * 50 + achievements.reduce((s, a) => s + a.achievement.xp, 0);
-  const level = computeLevel(xp);
   const streak = computeStreak(
     snapshots.map((s) => ({ date: s.date, slaMedioMes: s.slaMedioMes })),
     config.metaSlaStreak,
@@ -96,21 +89,10 @@ export async function GET() {
       valorTotal: h.valorTotal,
       closedAt: h.closedAt,
     })),
-    gamification: {
-      enabled: config.gamificationEnabled,
-      xp,
-      level,
-      streak,
+    streak: {
+      dias: streak,
       metaSla: config.metaSlaStreak,
       metaPontos: config.metaPontosMes,
-      achievements: achievements.map((a) => ({
-        code: a.achievement.code,
-        name: a.achievement.name,
-        description: a.achievement.description,
-        icon: a.achievement.icon,
-        xp: a.achievement.xp,
-        unlockedAt: a.unlockedAt,
-      })),
     },
   });
 }
