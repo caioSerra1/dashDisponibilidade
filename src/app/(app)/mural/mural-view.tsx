@@ -9,7 +9,6 @@ import {
   FileText,
   ExternalLink,
   Users,
-  Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -120,7 +119,6 @@ export function MuralView() {
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : (
         <>
-          <TeamWalletCard kpis={data.kpisEquipe} />
           <TeamKpis kpis={data.kpisEquipe} />
 
           <div className="grid gap-4 lg:grid-cols-3">
@@ -186,70 +184,6 @@ export function MuralView() {
         member={activeMember}
       />
     </div>
-  );
-}
-
-function TeamWalletCard({ kpis }: { kpis: MuralPayload["kpisEquipe"] }) {
-  const total = kpis.valorTotal;
-  const pts = kpis.valorTotalPontos;
-  const disp = kpis.valorTotalDisponibilidade;
-  const ptsPct = total > 0 ? (pts / total) * 100 : 0;
-  const dispPct = total > 0 ? (disp / total) * 100 : 0;
-
-  return (
-    <Card className="border-primary/20 bg-gradient-to-br from-primary/8 via-transparent to-success/5">
-      <CardContent className="p-5">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/20 text-primary">
-              <Wallet className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Variável da equipe no período
-              </p>
-              <p className="text-3xl md:text-4xl font-bold text-primary mt-0.5 tracking-tight">
-                {formatBRL(total)}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Soma dos valores parciais de todos os colaboradores visíveis
-              </p>
-            </div>
-          </div>
-
-          <div className="flex-1 md:max-w-md md:ml-6 space-y-2">
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-muted-foreground">
-                  Variável de desenvolvimento (pontos)
-                </span>
-                <span className="font-semibold tabular-nums">{formatBRL(pts)}</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all"
-                  style={{ width: `${ptsPct}%` }}
-                />
-              </div>
-            </div>
-            <div>
-              <div className="flex justify-between text-xs mb-1">
-                <span className="text-muted-foreground">
-                  Variável de disponibilidade (SLA)
-                </span>
-                <span className="font-semibold tabular-nums">{formatBRL(disp)}</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
-                <div
-                  className="h-full bg-success transition-all"
-                  style={{ width: `${dispPct}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
   );
 }
 
