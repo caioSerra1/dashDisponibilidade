@@ -10,9 +10,22 @@ const createSchema = z.object({
   content: z.string().min(1).max(4000),
 });
 
-async function requireAdmin() {
+/**
+ * Exige que a sessão seja admin e retorna `{ adminId }` pronto pra usar.
+ * Retorna null quando não autenticado, não-admin ou sem id.
+ */
+async function requireAdmin(): Promise<{ adminId: string } | null> {
   const s = await auth();
-  return s?.user?.role === "ADMIN" ? s : null;
+  if (!s?.user?.id || s.user.role !== "ADMIN") return null;
+  return { adminId: s.user.id };
+}
+
+async function assertUserExists(id: string): Promise<boolean> {
+  const u = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  return u != null;
 }
 
 export async function GET(
@@ -23,6 +36,9 @@ export async function GET(
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const { id } = await params;
+  if (!(await assertUserExists(id))) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   const notes = await prisma.userNote.findMany({
     where: { userId: id },
     include: { author: { select: { id: true, name: true } } },
@@ -35,9 +51,12 @@ export async function POST(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  const session = await requireAdmin();
-  if (!session) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  const admin = await requireAdmin();
+  if (!admin) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const { id } = await params;
+  if (!(await assertUserExists(id))) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
   const parsed = createSchema.safeParse(await request.json());
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
@@ -45,7 +64,7 @@ export async function POST(
   const note = await prisma.userNote.create({
     data: {
       userId: id,
-      authorId: session.user!.id,
+      authorId: admin.adminId,
       content: parsed.data.content,
     },
     include: { author: { select: { id: true, name: true } } },

@@ -10,9 +10,8 @@ import {
   detectAnomaly,
   type BacklogAging,
 } from "@/lib/team-metrics";
-import { getTasksForUser, getAllAssignedTasks } from "@/lib/clickup";
+import { getAllAssignedTasks, normalizeStatusName } from "@/lib/clickup";
 import { loadConfig } from "@/lib/config";
-import { normalizeStatusName } from "@/lib/clickup";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -45,6 +44,7 @@ export async function GET(request: Request) {
       const [
         snapshotsInPeriod,
         latestMetric,
+        prevLatestMetric,
         goalHitsCurrent,
         goalHitsPrev,
         prevSnapshots,
@@ -57,6 +57,10 @@ export async function GET(request: Request) {
         }),
         prisma.taskMetricSnapshot.findFirst({
           where: { userId: u.id, date: { gte: from, lte: to } },
+          orderBy: { date: "desc" },
+        }),
+        prisma.taskMetricSnapshot.findFirst({
+          where: { userId: u.id, date: { gte: prevFrom, lte: prevTo } },
           orderBy: { date: "desc" },
         }),
         prisma.goalHit.findMany({
@@ -128,10 +132,6 @@ export async function GET(request: Request) {
       ).length;
 
       // Evolução vs período anterior
-      const prevLatestMetric = await prisma.taskMetricSnapshot.findFirst({
-        where: { userId: u.id, date: { gte: prevFrom, lte: prevTo } },
-        orderBy: { date: "desc" },
-      });
       const prevLatestSnap = prevSnapshots.at(0);
       const evolution = computeEvolution(
         {
@@ -154,6 +154,7 @@ export async function GET(request: Request) {
 
       return {
         u,
+        closedInPeriod: assigned?.closedInPeriod ?? [],
         card: {
           userId: u.id,
           name: u.name,
@@ -231,18 +232,12 @@ export async function GET(request: Request) {
 
   const equidade = computeTeamEquity(allCards.map((c) => c.pontosDev));
 
-  // Heatmap: precisa de todas as tasks fechadas no período. Agregamos o que
-  // já vem do ClickUp em `getAllAssignedTasks`.
+  // Heatmap: reaproveita o `closedInPeriod` já buscado na etapa de membros
+  // (evita segunda rodada de calls no ClickUp).
   const allClosedDates: Array<{ dateClosed: number | null }> = [];
   for (const m of memberResults) {
-    if (!m.u.clickupUserId) continue;
-    try {
-      const raw = await getTasksForUser(m.u.clickupUserId, from, to);
-      for (const t of raw) {
-        if (t.dateClosed != null) allClosedDates.push({ dateClosed: t.dateClosed });
-      }
-    } catch {
-      // ignora falha por usuário
+    for (const t of m.closedInPeriod) {
+      if (t.dateClosed != null) allClosedDates.push({ dateClosed: t.dateClosed });
     }
   }
   const heatmap = computeHeatmap(allClosedDates);

@@ -82,21 +82,23 @@ export interface TaskMetrics extends TypeMetrics {
 
 const HOUR_MS = 3600_000;
 
-const EMPTY_TYPE_METRICS: TypeMetrics = {
-  tasksClosed: 0,
-  tasksClosedLast7d: 0,
-  pointsSum: 0,
-  avgResolutionHours: null,
-  avgCycleHours: null,
-  avgAckHours: null,
-  throughputPerWeek: null,
-  returnedToExecution: 0,
-  priorityBreakdown: { urgent: 0, high: 0, normal: 0, low: 0 },
-  tagsBreakdown: [],
-};
+function emptyTypeMetrics(): TypeMetrics {
+  return {
+    tasksClosed: 0,
+    tasksClosedLast7d: 0,
+    pointsSum: 0,
+    avgResolutionHours: null,
+    avgCycleHours: null,
+    avgAckHours: null,
+    throughputPerWeek: null,
+    returnedToExecution: 0,
+    priorityBreakdown: { urgent: 0, high: 0, normal: 0, low: 0 },
+    tagsBreakdown: [],
+  };
+}
 
 function computeSegment(tasks: readonly RichTask[], now: number): TypeMetrics {
-  if (tasks.length === 0) return { ...EMPTY_TYPE_METRICS };
+  if (tasks.length === 0) return emptyTypeMetrics();
 
   const closed = tasks.filter((t) => typeof t.dateClosed === "number");
   const tasksClosed = closed.length;

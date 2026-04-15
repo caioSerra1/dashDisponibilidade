@@ -63,6 +63,21 @@ describe("parsePeriodFromSearchParams", () => {
     expect(p.mode).toBe("mes");
     expect(p.from.getUTCDate()).toBe(1);
   });
+
+  it("intervalo com data fora de range cai pro mês atual", () => {
+    // 2026-13-99 seria normalizado pra 2027-02-08 sem validação
+    const p = parsePeriodFromSearchParams(
+      sp({ modo: "intervalo", de: "2026-13-99", ate: "2026-14-01" }),
+    );
+    expect(p.mode).toBe("mes");
+  });
+
+  it("intervalo com 31 de fevereiro cai pro mês atual", () => {
+    const p = parsePeriodFromSearchParams(
+      sp({ modo: "intervalo", de: "2026-02-31", ate: "2026-03-01" }),
+    );
+    expect(p.mode).toBe("mes");
+  });
 });
 
 describe("weeksInMonth", () => {

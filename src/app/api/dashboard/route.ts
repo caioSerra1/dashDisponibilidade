@@ -32,6 +32,13 @@ export async function GET(request: Request) {
     if (session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });
     }
+    const target = await prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+    if (!target) {
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
     userId = targetUserId;
   }
 

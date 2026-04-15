@@ -155,16 +155,29 @@ function parseIsoDateUtc(s: string, endOfDay: boolean): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
   if (!m) return null;
   const [, y, mo, d] = m;
+  const year = Number(y);
+  const month = Number(mo);
+  const day = Number(d);
+  // Valida ranges — JS Date normaliza silenciosamente (2026-13-99 → 2027-02-08)
+  if (month < 1 || month > 12) return null;
+  if (day < 1 || day > 31) return null;
   const date = new Date(
     Date.UTC(
-      Number(y),
-      Number(mo) - 1,
-      Number(d),
+      year,
+      month - 1,
+      day,
       endOfDay ? 23 : 0,
       endOfDay ? 59 : 0,
       endOfDay ? 59 : 0,
     ),
   );
-  if (Number.isNaN(date.getTime())) return null;
+  // Confirma que o normalizado casa — pega dias inválidos tipo 31/2
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
   return date;
 }
