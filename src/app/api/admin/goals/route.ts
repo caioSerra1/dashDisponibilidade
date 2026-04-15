@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
 const KIND = z.enum(["POINTS", "TASKS_CLOSED", "SLA", "AVG_RESOLUTION", "CUSTOM"]);
-const PERIOD = z.enum(["MONTH", "WEEK"]);
+const PERIOD = z.enum(["MONTH", "WEEK", "CONTINUOUS"]);
 
 const createSchema = z.object({
   userId: z.string().min(1),
@@ -13,6 +13,7 @@ const createSchema = z.object({
   target: z.number().positive(),
   coinsReward: z.number().int().nonnegative(),
   label: z.string().optional(),
+  renewable: z.boolean().optional(),
   active: z.boolean().optional(),
 });
 

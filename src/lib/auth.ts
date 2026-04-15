@@ -45,10 +45,30 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = (user as { id: string }).id;
         token.role = (user as { role: "ADMIN" | "MEMBER" }).role;
+        token.name = (user as { name?: string | null }).name ?? null;
+        token.email = (user as { email?: string | null }).email ?? null;
+      }
+      if (trigger === "update") {
+        // session.update({ name: "..." }) chega aqui como `session` param
+        const updates = session as { name?: string; email?: string } | undefined;
+        if (updates?.name) token.name = updates.name;
+        if (updates?.email) token.email = updates.email;
+        // Se caller não mandou valor, revalida do banco
+        if (!updates?.name && !updates?.email && token.id) {
+          const fresh = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: { name: true, email: true, role: true },
+          });
+          if (fresh) {
+            token.name = fresh.name;
+            token.email = fresh.email;
+            token.role = fresh.role;
+          }
+        }
       }
       return token;
     },
@@ -56,6 +76,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (session.user) {
         session.user.id = token.id as string;
         session.user.role = token.role as "ADMIN" | "MEMBER";
+        if (token.name != null) session.user.name = token.name as string;
+        if (token.email != null) session.user.email = token.email as string;
       }
       return session;
     },

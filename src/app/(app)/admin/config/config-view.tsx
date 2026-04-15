@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Trash2, Save } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Plus, Trash2, Save, Upload, Image as ImageIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { NumberField } from "@/components/ui/number-field";
 import { Label } from "@/components/ui/label";
@@ -197,6 +197,15 @@ export function ConfigView() {
         </CardContent>
       </Card>
 
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Identidade visual</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <LogoUploader />
+        </CardContent>
+      </Card>
+
       <Card className="lg:col-span-2 glass">
         <CardHeader>
           <CardTitle>Simulação ao vivo</CardTitle>
@@ -306,6 +315,97 @@ function ExecutionStatusEditor({
           Adicionar
         </Button>
       </div>
+    </div>
+  );
+}
+
+function LogoUploader() {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [version, setVersion] = useState(0);
+  const [hasCustom, setHasCustom] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/logo", { method: "HEAD" })
+      .then((r) => setHasCustom(r.ok))
+      .catch(() => setHasCustom(false));
+  }, [version]);
+
+  async function handle(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true);
+    setMsg(null);
+    const fd = new FormData();
+    fd.append("file", f);
+    const r = await fetch("/api/admin/logo", { method: "POST", body: fd });
+    setUploading(false);
+    e.target.value = "";
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setMsg(j.error ?? "Erro no upload");
+      return;
+    }
+    setVersion((v) => v + 1);
+    setMsg("Logo atualizado");
+    setTimeout(() => setMsg(null), 2500);
+  }
+
+  async function remove() {
+    if (!confirm("Remover o logo personalizado e voltar ao padrão?")) return;
+    const r = await fetch("/api/admin/logo", { method: "DELETE" });
+    if (r.ok) {
+      setVersion((v) => v + 1);
+      setMsg("Logo padrão restaurado");
+      setTimeout(() => setMsg(null), 2500);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Envie um logo personalizado (PNG, JPG ou WEBP, até 2 MB). Aparece no sidebar e
+        nas páginas de login.
+      </p>
+      <div className="flex items-center gap-4">
+        <div className="flex items-center justify-center h-20 w-40 rounded-md border bg-card overflow-hidden">
+          {hasCustom ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`/api/logo?v=${version}`}
+              alt="Logo atual"
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <ImageIcon className="h-6 w-6 text-muted-foreground" />
+          )}
+        </div>
+        <div className="space-y-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={handle}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            <Upload className="h-4 w-4" />
+            {hasCustom ? "Substituir logo" : "Enviar logo"}
+          </Button>
+          {hasCustom && (
+            <Button variant="ghost" size="sm" onClick={remove}>
+              Voltar ao logo padrão
+            </Button>
+          )}
+        </div>
+      </div>
+      {msg && <p className="text-xs text-success">{msg}</p>}
     </div>
   );
 }

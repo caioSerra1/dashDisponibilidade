@@ -104,8 +104,7 @@ export function LojaView() {
         <Card>
           <CardContent className="p-8 text-center">
             <p className="text-muted-foreground">
-              Nenhum item cadastrado ainda. O admin precisa publicar itens em{" "}
-              <strong>Loja — Itens</strong>.
+              Nenhum item disponível no momento.
             </p>
           </CardContent>
         </Card>

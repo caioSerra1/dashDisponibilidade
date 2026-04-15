@@ -7,6 +7,8 @@ export interface GoalLike {
   target: number;
   coinsReward: number;
   active: boolean;
+  renewable: boolean;
+  endedAt: Date | null;
 }
 
 export interface GoalMetricsCtx {
@@ -32,6 +34,8 @@ export interface HitCheck {
  * Puro: dado o contexto de métricas e as metas ativas,
  * retorna quais metas foram cumpridas AGORA.
  * O caller verifica idempotência em GoalHit antes de creditar.
+ *
+ * Metas com `endedAt` preenchido ou `active=false` são ignoradas.
  */
 export function evaluateGoals(
   goals: readonly GoalLike[],
@@ -39,6 +43,7 @@ export function evaluateGoals(
 ): readonly GoalLike[] {
   return goals.filter((g) => {
     if (!g.active) return false;
+    if (g.endedAt != null) return false;
     switch (g.kind) {
       case "POINTS":
         return metrics.pontosMes >= g.target;

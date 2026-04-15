@@ -148,6 +148,7 @@ enum GoalKind {
 enum GoalPeriod {
   MONTH
   WEEK
+  CONTINUOUS
 }
 
 model Goal {
@@ -159,6 +160,8 @@ model Goal {
   coinsReward Int        @default(0)
   label       String?
   active      Boolean    @default(true)
+  renewable   Boolean    @default(true)
+  endedAt     DateTime?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

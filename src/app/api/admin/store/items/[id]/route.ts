@@ -6,7 +6,6 @@ import { prisma } from "@/lib/db";
 const patchSchema = z.object({
   name: z.string().optional(),
   description: z.string().optional(),
-  imageUrl: z.string().nullable().optional(),
   priceCoins: z.number().int().positive().optional(),
   stock: z.number().int().nonnegative().nullable().optional(),
   featured: z.boolean().optional(),

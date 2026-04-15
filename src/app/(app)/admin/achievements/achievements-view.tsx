@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NumberField } from "@/components/ui/number-field";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { IconPicker, RenderIcon } from "@/components/ui/icon-picker";
 import { RULE_LABELS, RULE_TYPES, type AchievementRule } from "@/lib/achievement-rules";
 
 interface Achievement {
@@ -31,7 +32,7 @@ export function AchievementsAdminView() {
     code: "",
     name: "",
     description: "",
-    icon: "trophy",
+    icon: "lucide:trophy",
     xp: 100,
     coinsReward: 50,
     ruleType: "POINTS_MIN_MONTH" as AchievementRule["type"],
@@ -127,13 +128,9 @@ export function AchievementsAdminView() {
                 placeholder="O que precisa ser feito para desbloquear"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Ícone (lucide id)</Label>
-              <Input
-                value={form.icon}
-                onChange={(e) => setForm({ ...form, icon: e.target.value })}
-                placeholder="trophy, flame, target, sparkles…"
-              />
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Ícone</Label>
+              <IconPicker value={form.icon} onChange={(v) => setForm({ ...form, icon: v })} />
             </div>
             <div className="space-y-1.5">
               <Label>Regra</Label>
@@ -203,6 +200,9 @@ export function AchievementsAdminView() {
                   key={a.id}
                   className="flex items-center justify-between gap-3 rounded-md border p-3"
                 >
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary text-xl">
+                    <RenderIcon value={a.icon} className="h-5 w-5" />
+                  </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <p className="font-semibold truncate">{a.name}</p>

@@ -9,7 +9,7 @@ import { CoinBalance } from "@/components/game/coin-balance";
 interface Goal {
   id: string;
   kind: "POINTS" | "TASKS_CLOSED" | "SLA" | "AVG_RESOLUTION" | "CUSTOM";
-  period: "MONTH" | "WEEK";
+  period: "MONTH" | "WEEK" | "CONTINUOUS";
   target: number;
   coinsReward: number;
   customLabel: string | null;
@@ -21,10 +21,16 @@ interface Goal {
 
 const KIND_LABEL: Record<Goal["kind"], string> = {
   POINTS: "Pontos de sprint",
-  TASKS_CLOSED: "Tasks concluídas",
+  TASKS_CLOSED: "Tarefas concluídas",
   SLA: "Disponibilidade",
   AVG_RESOLUTION: "Tempo médio de resolução",
   CUSTOM: "Personalizada",
+};
+
+const PERIOD_LABEL: Record<Goal["period"], string> = {
+  MONTH: "mensal",
+  WEEK: "semanal",
+  CONTINUOUS: "contínua",
 };
 
 export function MetasView() {
@@ -55,8 +61,7 @@ export function MetasView() {
       {goals.length === 0 ? (
         <Card>
           <CardContent className="p-8 text-center text-muted-foreground">
-            Nenhuma meta ativa. O admin precisa criar metas pra você em{" "}
-            <strong>Metas (cadastro)</strong>.
+            Nenhuma meta ativa no momento.
           </CardContent>
         </Card>
       ) : (
@@ -70,8 +75,8 @@ export function MetasView() {
                       {g.customLabel ?? KIND_LABEL[g.kind]}
                       {g.hitThisPeriod && <CheckCircle2 className="h-4 w-4 text-success" />}
                     </CardTitle>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Período: {g.period === "MONTH" ? "mensal" : "semanal"}
+                    <p className="text-xs text-muted-foreground mt-0.5 capitalize">
+                      {PERIOD_LABEL[g.period]}
                     </p>
                   </div>
                   <CoinBalance coins={g.coinsReward} size="sm" />

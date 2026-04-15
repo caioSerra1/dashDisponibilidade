@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Plus, Trash2, Pencil, Save, X, Star } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Plus, Trash2, Pencil, Save, X, Star, Upload, ImageIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,38 +22,47 @@ interface Item {
   active: boolean;
 }
 
+type Toast = { kind: "ok" | "err"; text: string } | null;
+
 export function LojaItensView() {
   const [items, setItems] = useState<Item[]>([]);
   const [form, setForm] = useState({
     name: "",
     description: "",
-    imageUrl: "",
     priceCoins: 100,
     stock: null as number | null,
     hasStock: false,
     featured: false,
     sortOrder: 0,
   });
-  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<Toast>(null);
+
+  function showToast(t: Toast) {
+    setToast(t);
+    if (t) setTimeout(() => setToast(null), 3500);
+  }
 
   async function reload() {
-    const r = await fetch("/api/admin/store/items").then((x) => x.json());
-    setItems(r.items ?? []);
+    try {
+      const r = await fetch("/api/admin/store/items").then((x) => x.json());
+      setItems(r.items ?? []);
+    } catch {
+      showToast({ kind: "err", text: "Falha ao carregar itens" });
+    }
   }
 
   useEffect(() => {
     reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function create() {
-    setError(null);
     const r = await fetch("/api/admin/store/items", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: form.name,
         description: form.description,
-        imageUrl: form.imageUrl || null,
         priceCoins: form.priceCoins,
         stock: form.hasStock ? form.stock ?? 0 : null,
         featured: form.featured,
@@ -61,39 +70,71 @@ export function LojaItensView() {
       }),
     });
     if (!r.ok) {
-      setError("Erro ao criar item");
+      showToast({ kind: "err", text: "Erro ao criar item" });
       return;
     }
     setForm({
       name: "",
       description: "",
-      imageUrl: "",
       priceCoins: 100,
       stock: null,
       hasStock: false,
       featured: false,
       sortOrder: 0,
     });
+    showToast({ kind: "ok", text: "Item criado — agora envie a imagem na lista abaixo" });
     reload();
   }
 
   async function patch(id: string, data: Partial<Item>) {
-    await fetch(`/api/admin/store/items/${id}`, {
+    const r = await fetch(`/api/admin/store/items/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
-    reload();
+    if (r.ok) reload();
+    else showToast({ kind: "err", text: "Erro ao atualizar" });
   }
 
   async function remove(id: string) {
     if (!confirm("Excluir este item?")) return;
-    await fetch(`/api/admin/store/items/${id}`, { method: "DELETE" });
+    const r = await fetch(`/api/admin/store/items/${id}`, { method: "DELETE" });
+    if (r.ok) {
+      showToast({ kind: "ok", text: "Item excluído" });
+      reload();
+    }
+  }
+
+  async function uploadImage(id: string, file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    const r = await fetch(`/api/admin/store/items/${id}/image`, {
+      method: "POST",
+      body: fd,
+    });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      showToast({ kind: "err", text: j.error ?? "Erro no upload" });
+      return;
+    }
+    showToast({ kind: "ok", text: "Imagem enviada" });
     reload();
   }
 
   return (
     <div className="space-y-6 max-w-5xl">
+      {toast && (
+        <div
+          className={`fixed bottom-4 right-4 z-50 rounded-md border px-4 py-2 text-sm shadow-lg ${
+            toast.kind === "ok"
+              ? "bg-success/10 border-success/40 text-success"
+              : "bg-destructive/10 border-destructive/40 text-destructive"
+          }`}
+        >
+          {toast.text}
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -103,17 +144,9 @@ export function LojaItensView() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-2">
               <Label>Nome</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            </div>
-            <div className="space-y-1.5">
-              <Label>URL da imagem (opcional)</Label>
-              <Input
-                value={form.imageUrl}
-                onChange={(e) => setForm({ ...form, imageUrl: e.target.value })}
-                placeholder="https://…"
-              />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Descrição</Label>
@@ -174,7 +207,9 @@ export function LojaItensView() {
               <Button onClick={create} disabled={!form.name || !form.description}>
                 Adicionar item
               </Button>
-              {error && <span className="ml-3 text-sm text-destructive">{error}</span>}
+              <p className="text-xs text-muted-foreground mt-2">
+                Após criar, envie a imagem clicando em <strong>Enviar imagem</strong> na lista abaixo.
+              </p>
             </div>
           </div>
         </CardContent>
@@ -190,7 +225,13 @@ export function LojaItensView() {
           ) : (
             <div className="space-y-3">
               {items.map((i) => (
-                <ItemRow key={i.id} item={i} onPatch={patch} onRemove={remove} />
+                <ItemRow
+                  key={i.id}
+                  item={i}
+                  onPatch={patch}
+                  onRemove={remove}
+                  onUpload={uploadImage}
+                />
               ))}
             </div>
           )}
@@ -204,28 +245,30 @@ function ItemRow({
   item,
   onPatch,
   onRemove,
+  onUpload,
 }: {
   item: Item;
   onPatch: (id: string, data: Partial<Item> & { stock?: number | null }) => Promise<void>;
   onRemove: (id: string) => Promise<void>;
+  onUpload: (id: string, file: File) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
     name: item.name,
     description: item.description,
-    imageUrl: item.imageUrl ?? "",
     priceCoins: item.priceCoins,
     hasStock: item.stock !== null,
     stock: item.stock ?? 0,
     sortOrder: item.sortOrder,
   });
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   function startEdit() {
     setDraft({
       name: item.name,
       description: item.description,
-      imageUrl: item.imageUrl ?? "",
       priceCoins: item.priceCoins,
       hasStock: item.stock !== null,
       stock: item.stock ?? 0,
@@ -239,7 +282,6 @@ function ItemRow({
     await onPatch(item.id, {
       name: draft.name,
       description: draft.description,
-      imageUrl: draft.imageUrl || null,
       priceCoins: draft.priceCoins,
       stock: draft.hasStock ? draft.stock : null,
       sortOrder: draft.sortOrder,
@@ -248,21 +290,22 @@ function ItemRow({
     setEditing(false);
   }
 
+  async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    setUploading(true);
+    await onUpload(item.id, f);
+    setUploading(false);
+    e.target.value = "";
+  }
+
   if (editing) {
     return (
       <div className="rounded-md border-2 border-primary/40 bg-primary/5 p-4 space-y-3">
         <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 sm:col-span-2">
             <Label className="text-xs">Nome</Label>
             <Input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">URL da imagem</Label>
-            <Input
-              value={draft.imageUrl}
-              onChange={(e) => setDraft({ ...draft, imageUrl: e.target.value })}
-              placeholder="https://…"
-            />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label className="text-xs">Descrição</Label>
@@ -322,10 +365,12 @@ function ItemRow({
 
   return (
     <div className="flex items-center gap-3 rounded-md border p-3">
-      <div className="h-14 w-14 rounded-md bg-muted overflow-hidden flex-shrink-0">
-        {item.imageUrl && (
+      <div className="h-14 w-14 rounded-md bg-muted overflow-hidden flex-shrink-0 flex items-center justify-center">
+        {item.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <ImageIcon className="h-6 w-6 text-muted-foreground" />
         )}
       </div>
       <div className="flex-1 min-w-0">
@@ -355,6 +400,23 @@ function ItemRow({
           />
         </div>
       </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp"
+        className="hidden"
+        onChange={handleFile}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        title="Enviar imagem"
+      >
+        <Upload className="h-4 w-4" />
+        {item.imageUrl ? "Substituir" : "Enviar imagem"}
+      </Button>
       <Button variant="ghost" size="icon" onClick={startEdit} title="Editar">
         <Pencil className="h-4 w-4" />
       </Button>

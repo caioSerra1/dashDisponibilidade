@@ -6,7 +6,6 @@ import { prisma } from "@/lib/db";
 const createSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().min(1).max(280),
-  imageUrl: z.string().nullable().optional(),
   priceCoins: z.number().int().positive(),
   stock: z.number().int().nonnegative().nullable().optional(),
   featured: z.boolean().optional(),

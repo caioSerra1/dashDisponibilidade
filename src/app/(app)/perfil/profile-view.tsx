@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { useSession } from "next-auth/react";
 import { Camera, Save, KeyRound } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ interface Profile {
 }
 
 export function ProfileView() {
+  const { update: updateSession } = useSession();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
@@ -56,6 +58,7 @@ export function ProfileView() {
     if (r.ok) {
       setSavedProfile(true);
       setTimeout(() => setSavedProfile(false), 2000);
+      await updateSession({ name });
       reload();
     }
   }

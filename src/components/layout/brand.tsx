@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { cn } from "@/lib/cn";
 
@@ -9,17 +9,25 @@ interface BrandProps {
   className?: string;
 }
 
-const CANDIDATES = ["/logo.svg"] as const;
-
 // O SVG do logo é 465x122 (incluindo o texto "Portal Concursos"),
 // então definimos uma largura proporcional pela altura desejada.
 const ASPECT = 465 / 122;
 
+const CANDIDATES = ["/api/logo", "/logo.svg"] as const;
+
 export function Brand({ height = 36, className }: BrandProps) {
   const [idx, setIdx] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [cacheBust, setCacheBust] = useState(0);
   const src = CANDIDATES[idx];
   const width = Math.round(height * ASPECT);
+
+  // Cache-bust quando a janela volta ao foco (útil depois de trocar logo em admin)
+  useEffect(() => {
+    const onFocus = () => setCacheBust((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   if (failed || !src) {
     return (
@@ -36,10 +44,12 @@ export function Brand({ height = 36, className }: BrandProps) {
     );
   }
 
+  const finalSrc = cacheBust > 0 ? `${src}?v=${cacheBust}` : src;
+
   return (
     <Image
-      key={src}
-      src={src}
+      key={finalSrc}
+      src={finalSrc}
       alt="Portal Concursos"
       width={width}
       height={height}

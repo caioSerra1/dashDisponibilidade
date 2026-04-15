@@ -13,7 +13,10 @@ export async function GET() {
   const { year, month } = currentMonth();
 
   const [goals, snapshot, hits] = await Promise.all([
-    prisma.goal.findMany({ where: { userId, active: true }, orderBy: { createdAt: "asc" } }),
+    prisma.goal.findMany({
+      where: { userId, active: true, endedAt: null },
+      orderBy: { createdAt: "asc" },
+    }),
     prisma.taskMetricSnapshot.findFirst({
       where: { userId, year, month },
       orderBy: { date: "desc" },
@@ -40,7 +43,7 @@ export async function GET() {
         break;
       case "TASKS_CLOSED":
         current = (g.period === "WEEK" ? snapshot?.tasksClosedWeek : snapshot?.tasksClosedMonth) ?? 0;
-        label = `${current} / ${g.target} tasks`;
+        label = `${current} / ${g.target} tarefas`;
         break;
       case "SLA":
         current = dailySnapshot?.slaMedioMes ?? 0;

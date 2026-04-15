@@ -5,6 +5,8 @@ const UPLOAD_ROOT = process.env.UPLOAD_ROOT ?? "/app/uploads";
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 const MAX_BYTES = 2 * 1024 * 1024; // 2 MB
 
+export type ImageCategory = "avatars" | "produtos" | "logo";
+
 export class UploadError extends Error {
   constructor(message: string, public code: string) {
     super(message);
@@ -30,7 +32,16 @@ function resolveRoot(): string {
   return UPLOAD_ROOT;
 }
 
-export async function saveAvatar(userId: string, file: File): Promise<string> {
+/**
+ * Grava uma imagem em disco dentro de uma categoria (avatars/produtos/logo).
+ * Limpa versões anteriores do mesmo id (qualquer extensão), valida MIME + tamanho.
+ * Retorna o path relativo ao root de upload (com / como separador).
+ */
+export async function saveImage(
+  category: ImageCategory,
+  id: string,
+  file: File,
+): Promise<string> {
   if (!ALLOWED_MIME.has(file.type)) {
     throw new UploadError(`Tipo não permitido: ${file.type}`, "BAD_MIME");
   }
@@ -39,21 +50,27 @@ export async function saveAvatar(userId: string, file: File): Promise<string> {
   }
 
   const root = resolveRoot();
-  const dir = path.join(root, "avatars");
+  const dir = path.join(root, category);
   await fs.mkdir(dir, { recursive: true });
 
   const ext = extFromMime(file.type);
-  // Remove versões anteriores (outros extensions)
+  // Remove versões anteriores (qualquer extensão)
   for (const e of ["png", "jpg", "webp"]) {
-    await fs.rm(path.join(dir, `${userId}.${e}`), { force: true });
+    await fs.rm(path.join(dir, `${id}.${e}`), { force: true });
   }
-  const filePath = path.join(dir, `${userId}.${ext}`);
+  const filePath = path.join(dir, `${id}.${ext}`);
   const buffer = Buffer.from(await file.arrayBuffer());
   await fs.writeFile(filePath, buffer);
   return path.relative(root, filePath).replace(/\\/g, "/");
 }
 
-export async function readAvatar(relPath: string): Promise<{ buffer: Buffer; mime: string } | null> {
+/**
+ * Lê uma imagem salva. Aceita path relativo (ex: "produtos/abc.png") e
+ * previne path traversal.
+ */
+export async function readImage(
+  relPath: string,
+): Promise<{ buffer: Buffer; mime: string } | null> {
   const root = resolveRoot();
   const safe = path.normalize(relPath).replace(/^(\.\.[/\\])+/, "");
   const full = path.join(root, safe);
@@ -73,4 +90,29 @@ export async function readAvatar(relPath: string): Promise<{ buffer: Buffer; mim
   } catch {
     return null;
   }
+}
+
+/**
+ * Tenta ler a primeira imagem existente de uma categoria com um dado id,
+ * probing todas as extensões suportadas. Útil quando não se sabe o ext.
+ */
+export async function findImage(
+  category: ImageCategory,
+  id: string,
+): Promise<{ buffer: Buffer; mime: string } | null> {
+  for (const ext of ["png", "jpg", "webp"] as const) {
+    const r = await readImage(`${category}/${id}.${ext}`);
+    if (r) return r;
+  }
+  return null;
+}
+
+// --- Wrappers retrocompatíveis ---
+
+export async function saveAvatar(userId: string, file: File): Promise<string> {
+  return saveImage("avatars", userId, file);
+}
+
+export async function readAvatar(relPath: string): Promise<{ buffer: Buffer; mime: string } | null> {
+  return readImage(relPath);
 }

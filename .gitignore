@@ -10,4 +10,9 @@ coverage
 .DS_Store
 playwright-report
 test-results
+.playwright-mcp
+*.png
+!public/**/*.png
+!src/app/**/*.png
+tsconfig.tsbuildinfo
 .vercel

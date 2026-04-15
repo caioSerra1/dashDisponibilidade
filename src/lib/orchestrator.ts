@@ -248,7 +248,9 @@ async function maybeCreditGoals(
     tasksClosedWeek: number;
   },
 ) {
-  const goals = await prisma.goal.findMany({ where: { userId, active: true } });
+  const goals = await prisma.goal.findMany({
+    where: { userId, active: true, endedAt: null },
+  });
   const hits = evaluateGoals(goals, metricsCtx);
   for (const goal of hits) {
     // Idempotência manual: Postgres trata NULL como distinto, então o unique do schema
@@ -273,6 +275,13 @@ async function maybeCreditGoals(
         reason: `goal:${goal.kind}`,
         refType: "goal",
         refId: goal.id,
+      });
+    }
+    // Metas não renováveis encerram após bater uma vez
+    if (!goal.renewable) {
+      await prisma.goal.update({
+        where: { id: goal.id },
+        data: { endedAt: new Date() },
       });
     }
   }

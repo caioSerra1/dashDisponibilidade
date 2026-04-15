@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { AchievementsList } from "@/components/game/achievements-list";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { RenderIcon } from "@/components/ui/icon-picker";
 
 export default async function AchievementsPage() {
   const session = await auth();
@@ -48,11 +49,18 @@ export default async function AchievementsPage() {
               return (
                 <div
                   key={a.code}
-                  className={`rounded-md border p-3 ${got ? "bg-primary/5" : "opacity-60"}`}
+                  className={`flex items-start gap-3 rounded-md border p-3 ${
+                    got ? "bg-primary/5" : "opacity-60"
+                  }`}
                 >
-                  <p className="font-medium">{a.name}</p>
-                  <p className="text-xs text-muted-foreground">{a.description}</p>
-                  <p className="text-xs mt-1">+{a.xp} XP</p>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary text-xl">
+                    <RenderIcon value={a.icon} className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium truncate">{a.name}</p>
+                    <p className="text-xs text-muted-foreground">{a.description}</p>
+                    <p className="text-xs mt-1">+{a.xp} XP</p>
+                  </div>
                 </div>
               );
             })}
