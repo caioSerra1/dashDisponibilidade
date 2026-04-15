@@ -236,6 +236,8 @@ model TaskMetricSnapshot {
   date                     DateTime @db.Date
   year                     Int
   month                    Int
+
+  // Totais (dev + suporte; ignoradas ficam fora)
   tasksClosedMonth         Int
   tasksClosedWeek          Int
   pointsMonth              Float
@@ -245,6 +247,19 @@ model TaskMetricSnapshot {
   reopenedCount            Int      @default(0)
   tagsBreakdown            Json?
   priorityBreakdown        Json?
+
+  // Segmentação suporte/dev (Fase 3)
+  tasksClosedMonthDev      Int      @default(0)
+  tasksClosedMonthSupport  Int      @default(0)
+  pointsMonthDev           Float    @default(0)
+  avgResolutionHoursDev    Float?
+  avgResolutionHoursSupport Float?
+  avgCycleHoursDev         Float?
+  avgCycleHoursSupport     Float?
+  avgAckHoursSupport       Float?
+  returnedCountMonth       Int      @default(0)
+  typeBreakdown            Json?
+
   createdAt                DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

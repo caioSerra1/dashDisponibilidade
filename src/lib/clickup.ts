@@ -13,6 +13,8 @@ interface ClickUpRawTask {
   date_started?: string | null;
   date_closed?: string | null;
   assignees?: { id: number }[];
+  list?: { id?: string; name?: string } | null;
+  folder?: { id?: string; name?: string; hidden?: boolean } | null;
 }
 
 interface ClickUpTasksResponse {
@@ -40,6 +42,10 @@ function toRich(task: ClickUpRawTask): RichTask {
     dateClosed: task.date_closed ? Number(task.date_closed) : null,
     priority: normalizePriority(task.priority?.priority),
     tags: (task.tags ?? []).map((t) => t.name),
+    listId: task.list?.id ?? null,
+    folderId: task.folder?.id ?? null,
+    // Populado depois, via time_in_status, em decorateWithExecutionStart.
+    returnedToExecution: 0,
   };
 }
 
@@ -375,4 +381,33 @@ export function normalizeStatusName(s: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+/**
+ * Conta quantas vezes a task "voltou" pra um status de execução depois de
+ * ter saído. Heurística: conta o nº de entradas na timeline em algum dos
+ * `executionStatuses` e subtrai 1 (a primeira entrada não é retorno).
+ *
+ * Ex.: histórico [aberto → em_execução → teste → em_execução → concluído]
+ *   tem 2 entradas em execução → 1 retorno.
+ */
+export function countReturnsToExecution(
+  history: readonly TimeInStatusEntry[],
+  current: TimeInStatusEntry | null,
+  executionStatuses: readonly string[],
+): number {
+  if (executionStatuses.length === 0) return 0;
+  const wanted = new Set(executionStatuses.map(normalizeStatusName));
+  const all = (current ? [...history, current] : [...history]).sort(
+    (a, b) => a.sinceMs - b.sinceMs,
+  );
+  let execEntries = 0;
+  let lastWasExec = false;
+  for (const entry of all) {
+    const isExec = wanted.has(normalizeStatusName(entry.status));
+    // Só conta quando CRUZA pra execução (transição de "não-exec → exec").
+    if (isExec && !lastWasExec) execEntries += 1;
+    lastWasExec = isExec;
+  }
+  return Math.max(0, execEntries - 1);
 }

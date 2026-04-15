@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { findExecutionStartMs, normalizeStatusName } from "@/lib/clickup";
+import {
+  findExecutionStartMs,
+  normalizeStatusName,
+  countReturnsToExecution,
+} from "@/lib/clickup";
 
 describe("normalizeStatusName", () => {
   it("remove acentos e converte minúsculas", () => {
@@ -46,5 +50,64 @@ describe("findExecutionStartMs", () => {
 
   it("retorna null se a lista de execução está vazia", () => {
     expect(findExecutionStartMs(history, null, [])).toBeNull();
+  });
+});
+
+describe("countReturnsToExecution", () => {
+  const base = 1_700_000_000_000;
+  const exec = ["em execução"];
+
+  it("0 retornos quando a task passou uma única vez por execução", () => {
+    const hist = [
+      { status: "to do", sinceMs: base, totalMs: 0 },
+      { status: "em execução", sinceMs: base + 60_000, totalMs: 0 },
+      { status: "concluído", sinceMs: base + 120_000, totalMs: 0 },
+    ];
+    expect(countReturnsToExecution(hist, null, exec)).toBe(0);
+  });
+
+  it("conta 1 retorno quando volta pra execução uma vez", () => {
+    const hist = [
+      { status: "to do", sinceMs: base, totalMs: 0 },
+      { status: "em execução", sinceMs: base + 60_000, totalMs: 0 },
+      { status: "em teste", sinceMs: base + 120_000, totalMs: 0 },
+      { status: "em execução", sinceMs: base + 180_000, totalMs: 0 },
+      { status: "concluído", sinceMs: base + 240_000, totalMs: 0 },
+    ];
+    expect(countReturnsToExecution(hist, null, exec)).toBe(1);
+  });
+
+  it("conta 2 retornos quando volta duas vezes", () => {
+    const hist = [
+      { status: "em execução", sinceMs: base, totalMs: 0 },
+      { status: "em teste", sinceMs: base + 1, totalMs: 0 },
+      { status: "em execução", sinceMs: base + 2, totalMs: 0 },
+      { status: "em review", sinceMs: base + 3, totalMs: 0 },
+      { status: "em execução", sinceMs: base + 4, totalMs: 0 },
+    ];
+    expect(countReturnsToExecution(hist, null, exec)).toBe(2);
+  });
+
+  it("ignora entradas consecutivas no mesmo status", () => {
+    const hist = [
+      { status: "em execução", sinceMs: base, totalMs: 0 },
+      { status: "em execução", sinceMs: base + 1, totalMs: 0 },
+      { status: "concluído", sinceMs: base + 2, totalMs: 0 },
+    ];
+    expect(countReturnsToExecution(hist, null, exec)).toBe(0);
+  });
+
+  it("retorna 0 quando executionStatuses vazia", () => {
+    const hist = [{ status: "em execução", sinceMs: base, totalMs: 0 }];
+    expect(countReturnsToExecution(hist, null, [])).toBe(0);
+  });
+
+  it("considera current_status também", () => {
+    const hist = [
+      { status: "em execução", sinceMs: base, totalMs: 0 },
+      { status: "em teste", sinceMs: base + 1, totalMs: 0 },
+    ];
+    const current = { status: "em execução", sinceMs: base + 2, totalMs: 0 };
+    expect(countReturnsToExecution(hist, current, exec)).toBe(1);
   });
 });

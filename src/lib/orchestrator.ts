@@ -5,6 +5,7 @@ import {
   getTasksForUser,
   getTimeInStatus,
   findExecutionStartMs,
+  countReturnsToExecution,
 } from "./clickup";
 import { getAvailability, listHosts } from "./zabbix";
 import { computePartial } from "./calculate";
@@ -49,21 +50,27 @@ async function decorateWithExecutionStart(
     ),
   );
 
-  const startByTaskId = new Map<string, number | null>();
+  const decoratedById = new Map<string, { start: number | null; returns: number }>();
   closed.forEach((t, i) => {
     const tis = tisResults[i]!;
     if (!tis.ok) {
-      startByTaskId.set(t.id, null);
+      decoratedById.set(t.id, { start: null, returns: 0 });
       return;
     }
     const start = findExecutionStartMs(tis.history, tis.current, executionStatuses);
-    startByTaskId.set(t.id, start);
+    const returns = countReturnsToExecution(tis.history, tis.current, executionStatuses);
+    decoratedById.set(t.id, { start, returns });
   });
 
   return tasks.map((t) => {
     if (t.dateClosed == null) return t;
-    const start = startByTaskId.get(t.id);
-    return { ...t, dateStarted: start ?? null };
+    const decorated = decoratedById.get(t.id);
+    if (!decorated) return t;
+    return {
+      ...t,
+      dateStarted: decorated.start ?? null,
+      returnedToExecution: decorated.returns,
+    };
   });
 }
 
@@ -144,10 +151,10 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
       // Isso faz com que o cycle time seja calculado corretamente.
       tasks = await decorateWithExecutionStart(tasks, config.executionStatuses);
 
-      const metrics = computeTaskMetrics(tasks, now.getTime());
+      const metrics = computeTaskMetrics(tasks, now.getTime(), config.taskClassification);
       const pontos = metrics.pointsSum;
 
-      // 2. Calcular variável
+      // 2. Calcular variável (pontos = só DEV, suporte não pontua)
       const result = computePartial({
         pontosMes: pontos,
         slaMedioMes: slaMedio,
@@ -179,34 +186,39 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
         },
       });
 
-      // 4. Persistir TaskMetricSnapshot
+      // 4. Persistir TaskMetricSnapshot (totais + segmentado dev/suporte)
+      const snapshotData = {
+        year,
+        month,
+        // Totais (dev + suporte)
+        tasksClosedMonth: metrics.tasksClosed,
+        tasksClosedWeek: metrics.tasksClosedLast7d,
+        pointsMonth: metrics.pointsSum,
+        avgResolutionHoursMonth: metrics.avgResolutionHours,
+        avgCycleHoursMonth: metrics.avgCycleHours,
+        throughputPerWeek: metrics.throughputPerWeek,
+        reopenedCount: metrics.returnedToExecution,
+        tagsBreakdown: metrics.tagsBreakdown as unknown as object,
+        priorityBreakdown: metrics.priorityBreakdown as unknown as object,
+        // Segmentado
+        tasksClosedMonthDev: metrics.byType.dev.tasksClosed,
+        tasksClosedMonthSupport: metrics.byType.support.tasksClosed,
+        pointsMonthDev: metrics.byType.dev.pointsSum,
+        avgResolutionHoursDev: metrics.byType.dev.avgResolutionHours,
+        avgResolutionHoursSupport: metrics.byType.support.avgResolutionHours,
+        avgCycleHoursDev: metrics.byType.dev.avgCycleHours,
+        avgCycleHoursSupport: metrics.byType.support.avgCycleHours,
+        avgAckHoursSupport: metrics.byType.support.avgAckHours,
+        returnedCountMonth: metrics.returnedToExecution,
+        typeBreakdown: metrics.byType as unknown as object,
+      };
       await prisma.taskMetricSnapshot.upsert({
         where: { userId_date: { userId: user.id, date: today } },
-        update: {
-          year,
-          month,
-          tasksClosedMonth: metrics.tasksClosed,
-          tasksClosedWeek: metrics.tasksClosedLast7d,
-          pointsMonth: metrics.pointsSum,
-          avgResolutionHoursMonth: metrics.avgResolutionHours,
-          avgCycleHoursMonth: metrics.avgCycleHours,
-          throughputPerWeek: metrics.throughputPerWeek,
-          tagsBreakdown: metrics.tagsBreakdown as unknown as object,
-          priorityBreakdown: metrics.priorityBreakdown as unknown as object,
-        },
+        update: snapshotData,
         create: {
           userId: user.id,
           date: today,
-          year,
-          month,
-          tasksClosedMonth: metrics.tasksClosed,
-          tasksClosedWeek: metrics.tasksClosedLast7d,
-          pointsMonth: metrics.pointsSum,
-          avgResolutionHoursMonth: metrics.avgResolutionHours,
-          avgCycleHoursMonth: metrics.avgCycleHours,
-          throughputPerWeek: metrics.throughputPerWeek,
-          tagsBreakdown: metrics.tagsBreakdown as unknown as object,
-          priorityBreakdown: metrics.priorityBreakdown as unknown as object,
+          ...snapshotData,
         },
       });
 
@@ -315,7 +327,7 @@ export async function runClose(target?: { year: number; month: number }): Promis
         // ignore
       }
       tasks = await decorateWithExecutionStart(tasks, config.executionStatuses);
-      const metrics = computeTaskMetrics(tasks, to.getTime());
+      const metrics = computeTaskMetrics(tasks, to.getTime(), config.taskClassification);
       const pontos = metrics.pointsSum;
 
       const result = computePartial({

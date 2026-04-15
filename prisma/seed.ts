@@ -11,11 +11,27 @@ const DEFAULT_SLA_TIERS = [
   { minPct: 0, payoutPct: 0, order: 4 },
 ];
 
+const DEFAULT_TASK_CLASSIFICATION = {
+  dev: {
+    // Product Backlog no ClickUp
+    listIds: ["901321219372"],
+    // Folder ID da pasta "Sprints Semanais" — admin preenche manualmente
+    // via /admin/config depois de olhar a URL do folder no ClickUp.
+    folderIds: [] as string[],
+  },
+  support: {
+    // Demandas de Suporte no ClickUp
+    listIds: ["901321219373"],
+    folderIds: [] as string[],
+  },
+};
+
 const DEFAULT_CONFIG: Record<string, string> = {
   valorDisponibilidade100: "1500",
   valorPorPonto: "50",
   metaPontosMes: "40",
   metaSlaStreak: "99",
+  taskClassification: JSON.stringify(DEFAULT_TASK_CLASSIFICATION),
 };
 
 async function main() {

@@ -4,12 +4,26 @@ import { auth } from "@/lib/auth";
 import { loadConfig, saveConfig } from "@/lib/config";
 import { prisma } from "@/lib/db";
 
+const idArray = z.array(z.string().min(1).max(64)).max(100);
+
 const schema = z.object({
   valorDisponibilidade100: z.number().min(0).optional(),
   valorPorPonto: z.number().min(0).optional(),
   metaPontosMes: z.number().min(0).optional(),
   metaSlaStreak: z.number().min(0).max(100).optional(),
   executionStatuses: z.array(z.string().min(1).max(80)).max(50).optional(),
+  taskClassification: z
+    .object({
+      dev: z.object({
+        listIds: idArray.default([]),
+        folderIds: idArray.default([]),
+      }),
+      support: z.object({
+        listIds: idArray.default([]),
+        folderIds: idArray.default([]),
+      }),
+    })
+    .optional(),
   tiers: z
     .array(
       z.object({

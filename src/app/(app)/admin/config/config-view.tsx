@@ -13,12 +13,18 @@ interface Tier {
   payoutPct: number;
 }
 
+interface TaskClassification {
+  dev: { listIds: string[]; folderIds: string[] };
+  support: { listIds: string[]; folderIds: string[] };
+}
+
 interface ConfigState {
   valorDisponibilidade100: number;
   valorPorPonto: number;
   metaPontosMes: number;
   metaSlaStreak: number;
   executionStatuses: string[];
+  taskClassification: TaskClassification;
 }
 
 const DEFAULT: ConfigState = {
@@ -27,6 +33,10 @@ const DEFAULT: ConfigState = {
   metaPontosMes: 40,
   metaSlaStreak: 99,
   executionStatuses: ["em execução", "em andamento", "in progress"],
+  taskClassification: {
+    dev: { listIds: [], folderIds: [] },
+    support: { listIds: [], folderIds: [] },
+  },
 };
 
 export function ConfigView() {
@@ -126,6 +136,98 @@ export function ConfigView() {
             Requer o <strong>ClickApp &quot;Time in Status&quot;</strong> habilitado no
             workspace ClickUp (Settings → ClickApps). Sem ele, o tempo é calculado
             usando criada → fechada como fallback.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card className="lg:col-span-2">
+        <CardHeader>
+          <CardTitle>Classificação de tasks do ClickUp</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Tasks de <strong>desenvolvimento</strong> pontuam e viram variável. Tasks
+            de <strong>suporte</strong> só são medidas (volume, MTTA, MTTR). Tasks em
+            listas ou pastas não mapeadas aqui são classificadas como <em>ignoradas</em>
+            — não afetam a variável nem os KPIs principais.
+          </p>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-3 rounded-md border p-3">
+              <div>
+                <Label>Desenvolvimento</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Pontuam e compõem a variável.
+                </p>
+              </div>
+              <IdEditor
+                label="IDs de listas (list_id)"
+                values={cfg.taskClassification.dev.listIds}
+                onChange={(v) =>
+                  setCfg({
+                    ...cfg,
+                    taskClassification: {
+                      ...cfg.taskClassification,
+                      dev: { ...cfg.taskClassification.dev, listIds: v },
+                    },
+                  })
+                }
+              />
+              <IdEditor
+                label="IDs de pastas (folder_id)"
+                values={cfg.taskClassification.dev.folderIds}
+                onChange={(v) =>
+                  setCfg({
+                    ...cfg,
+                    taskClassification: {
+                      ...cfg.taskClassification,
+                      dev: { ...cfg.taskClassification.dev, folderIds: v },
+                    },
+                  })
+                }
+                helper="Use o folder_id pra classificar uma pasta inteira (ex.: Sprints Semanais)."
+              />
+            </div>
+
+            <div className="space-y-3 rounded-md border p-3">
+              <div>
+                <Label>Suporte</Label>
+                <p className="text-[11px] text-muted-foreground">
+                  São medidas mas não pontuam.
+                </p>
+              </div>
+              <IdEditor
+                label="IDs de listas (list_id)"
+                values={cfg.taskClassification.support.listIds}
+                onChange={(v) =>
+                  setCfg({
+                    ...cfg,
+                    taskClassification: {
+                      ...cfg.taskClassification,
+                      support: { ...cfg.taskClassification.support, listIds: v },
+                    },
+                  })
+                }
+              />
+              <IdEditor
+                label="IDs de pastas (folder_id)"
+                values={cfg.taskClassification.support.folderIds}
+                onChange={(v) =>
+                  setCfg({
+                    ...cfg,
+                    taskClassification: {
+                      ...cfg.taskClassification,
+                      support: { ...cfg.taskClassification.support, folderIds: v },
+                    },
+                  })
+                }
+              />
+            </div>
+          </div>
+
+          <p className="text-[11px] text-muted-foreground">
+            Precedência: suporte ganha se houver conflito. IDs de lista ganham de
+            IDs de pasta (a regra mais específica vence).
           </p>
         </CardContent>
       </Card>
@@ -231,6 +333,81 @@ export function ConfigView() {
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function IdEditor({
+  label,
+  values,
+  onChange,
+  helper,
+}: {
+  label: string;
+  values: string[];
+  onChange: (next: string[]) => void;
+  helper?: string;
+}) {
+  const [draft, setDraft] = useState("");
+
+  function add() {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    if (values.includes(trimmed)) {
+      setDraft("");
+      return;
+    }
+    onChange([...values, trimmed]);
+    setDraft("");
+  }
+
+  function remove(i: number) {
+    onChange(values.filter((_, j) => j !== i));
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">{label}</Label>
+      <div className="flex flex-wrap gap-1.5 mb-1.5 min-h-[1.5rem]">
+        {values.length === 0 && (
+          <span className="text-[11px] text-muted-foreground">Nenhum ID configurado.</span>
+        )}
+        {values.map((v, i) => (
+          <span
+            key={`${v}-${i}`}
+            className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 text-primary text-[11px] px-2 py-0.5 border border-primary/20 font-mono"
+          >
+            {v}
+            <button
+              type="button"
+              onClick={() => remove(i)}
+              className="text-primary/70 hover:text-destructive"
+              aria-label={`remover ${v}`}
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add();
+            }
+          }}
+          placeholder="ex: 901321219373"
+          className="flex h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        <Button type="button" size="sm" variant="outline" onClick={add}>
+          Adicionar
+        </Button>
+      </div>
+      {helper && <p className="text-[11px] text-muted-foreground">{helper}</p>}
     </div>
   );
 }
