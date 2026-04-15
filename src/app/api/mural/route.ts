@@ -142,6 +142,19 @@ export async function GET(request: Request) {
       const mttaHoras = latestMetric?.avgAckHoursSupport ?? null;
       const retornosExecucao = latestMetric?.returnedCountMonth ?? 0;
 
+      // Valores em R$ do colaborador no período.
+      //  - Mês corrente: usa latestSnap (DailySnapshot) — valor parcial
+      //  - Mês fechado (sem daily): usa monthlyClose — valor definitivo
+      const valorPontos =
+        latestSnap?.valorPontos ?? monthlyClose?.valorPontos ?? 0;
+      const valorDisponibilidade =
+        latestSnap?.valorDisponibilidade ??
+        monthlyClose?.valorDisponibilidade ??
+        0;
+      const valorParcial =
+        latestSnap?.valorParcial ?? monthlyClose?.valorTotal ?? 0;
+      const valorIsClosed = !latestSnap && monthlyClose != null;
+
       // WIP e backlog a partir das tasks ainda abertas
       let wipAtual = 0;
       let backlogAging: BacklogAging = {
@@ -229,6 +242,11 @@ export async function GET(request: Request) {
           scoreEvolucao: evolution.scoreEvolucao,
           deltaEvolucao: evolution.delta,
           prevGoalHitsCount: goalHitsPrev.length,
+          // Valores em R$ — parcial pro mês corrente, definitivo pra fechado
+          valorParcial,
+          valorPontos,
+          valorDisponibilidade,
+          valorFechado: valorIsClosed,
         },
       };
     }),
@@ -241,6 +259,12 @@ export async function GET(request: Request) {
   const totalTasksSuporte = allCards.reduce((a, c) => a + c.tasksSuporte, 0);
   const wipAtualTotal = allCards.reduce((a, c) => a + c.wipAtual, 0);
   const retornosTotal = allCards.reduce((a, c) => a + c.retornosExecucao, 0);
+  const totalValorParcial = allCards.reduce((a, c) => a + c.valorParcial, 0);
+  const totalValorPontos = allCards.reduce((a, c) => a + c.valorPontos, 0);
+  const totalValorDisponibilidade = allCards.reduce(
+    (a, c) => a + c.valorDisponibilidade,
+    0,
+  );
   const backlogAgingTotal: BacklogAging = {
     "0-2d": 0,
     "3-7d": 0,
@@ -325,6 +349,9 @@ export async function GET(request: Request) {
       retornosExecucao: retornosTotal,
       equidade,
       backlogAging: backlogAgingTotal,
+      valorTotal: totalValorParcial,
+      valorTotalPontos: totalValorPontos,
+      valorTotalDisponibilidade: totalValorDisponibilidade,
     },
     destaqueEvolucao: destaqueCard
       ? {
