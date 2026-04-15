@@ -32,6 +32,12 @@ export async function GET(request: Request) {
   const prevTo = new Date(from.getTime() - 1);
   const prevFrom = new Date(from.getTime() - duration);
 
+  // Se o período for um mês inteiro do passado, usamos MonthlyClose como
+  // fallback pra cobrir casos em que não há dailySnapshots naquele mês.
+  const isFullMonth = periodo.mode === "mes";
+  const fallbackYear = from.getUTCFullYear();
+  const fallbackMonth = from.getUTCMonth() + 1;
+
   const config = await loadConfig();
 
   const users = await prisma.user.findMany({
@@ -50,6 +56,7 @@ export async function GET(request: Request) {
         prevSnapshots,
         notesCount,
         assigned,
+        monthlyClose,
       ] = await Promise.all([
         prisma.dailySnapshot.findMany({
           where: { userId: u.id, date: { gte: from, lte: to } },
@@ -86,16 +93,52 @@ export async function GET(request: Request) {
         u.clickupUserId
           ? getAllAssignedTasks(u.clickupUserId, from, to).catch(() => null)
           : Promise.resolve(null),
+        // Fallback pra meses fechados sem dailySnapshots
+        isFullMonth
+          ? prisma.monthlyClose.findUnique({
+              where: {
+                userId_year_month: {
+                  userId: u.id,
+                  year: fallbackYear,
+                  month: fallbackMonth,
+                },
+              },
+            })
+          : Promise.resolve(null),
       ]);
 
       const latestSnap = snapshotsInPeriod.at(-1);
 
-      // Métricas do período (dev)
-      const pontosDev = latestMetric?.pointsMonthDev ?? 0;
-      const tasksDev = latestMetric?.tasksClosedMonthDev ?? 0;
-      const tasksSuporte = latestMetric?.tasksClosedMonthSupport ?? 0;
-      const slaAvg = latestSnap?.slaMedioMes ?? 0;
-      const mttrHoras = latestMetric?.avgResolutionHoursDev ?? null;
+      // Fallback: snapshots criados ANTES da Fase 3 têm os campos
+      // segmentados (dev/support) zerados por default. Se o snapshot tem
+      // dado total mas zero em dev+suporte, tratamos o total como dev
+      // (comportamento pré-reforma). Some assim que o próximo daily rodar.
+      const segmentedTotal =
+        (latestMetric?.tasksClosedMonthDev ?? 0) +
+        (latestMetric?.tasksClosedMonthSupport ?? 0);
+      const hasSegmentedData =
+        segmentedTotal > 0 || (latestMetric?.pointsMonthDev ?? 0) > 0;
+      const legacyTotalTasks = latestMetric?.tasksClosedMonth ?? 0;
+      const usePreReformaFallback = !hasSegmentedData && legacyTotalTasks > 0;
+
+      // Métricas do período (dev) com fallbacks:
+      //  1. Campos segmentados novos (daily pós-reforma)
+      //  2. Campos totais antigos (daily pré-reforma, mesmo mês)
+      //  3. MonthlyClose (mês passado, sem dailySnapshots)
+      const pontosDev = usePreReformaFallback
+        ? latestMetric?.pointsMonth ?? 0
+        : latestMetric?.pointsMonthDev ?? monthlyClose?.pontos ?? 0;
+      const tasksDev = usePreReformaFallback
+        ? legacyTotalTasks
+        : latestMetric?.tasksClosedMonthDev ?? 0;
+      const tasksSuporte = usePreReformaFallback
+        ? 0
+        : latestMetric?.tasksClosedMonthSupport ?? 0;
+      const slaAvg =
+        latestSnap?.slaMedioMes ?? monthlyClose?.slaFinal ?? 0;
+      const mttrHoras = usePreReformaFallback
+        ? latestMetric?.avgResolutionHoursMonth ?? null
+        : latestMetric?.avgResolutionHoursDev ?? null;
       const mttaHoras = latestMetric?.avgAckHoursSupport ?? null;
       const retornosExecucao = latestMetric?.returnedCountMonth ?? 0;
 
@@ -131,22 +174,34 @@ export async function GET(request: Request) {
         (h) => h.goal.category === "MILESTONE",
       ).length;
 
-      // Evolução vs período anterior
+      // Evolução vs período anterior — só compara quando há dado anterior
+      // real. Sem isso, o delta vira "100 - 0 = +100pp" fantasma.
       const prevLatestSnap = prevSnapshots.at(0);
-      const evolution = computeEvolution(
-        {
-          pontosDev,
-          tasksDev,
-          slaAvg,
-          avgResolutionHours: mttrHoras,
-        },
-        {
-          pontosDev: prevLatestMetric?.pointsMonthDev ?? 0,
-          tasksDev: prevLatestMetric?.tasksClosedMonthDev ?? 0,
-          slaAvg: prevLatestSnap?.slaMedioMes ?? 0,
-          avgResolutionHours: prevLatestMetric?.avgResolutionHoursDev ?? null,
-        },
-      );
+      const hasPrevData = prevLatestMetric != null || prevLatestSnap != null;
+      const evolution = hasPrevData
+        ? computeEvolution(
+            {
+              pontosDev,
+              tasksDev,
+              slaAvg,
+              avgResolutionHours: mttrHoras,
+            },
+            {
+              pontosDev: prevLatestMetric?.pointsMonthDev ?? 0,
+              tasksDev: prevLatestMetric?.tasksClosedMonthDev ?? 0,
+              slaAvg: prevLatestSnap?.slaMedioMes ?? 0,
+              avgResolutionHours: prevLatestMetric?.avgResolutionHoursDev ?? null,
+            },
+          )
+        : {
+            scoreEvolucao: 0,
+            delta: {
+              pontosDev: 0,
+              tasksDev: 0,
+              slaAvg: 0,
+              avgResolutionHours: null,
+            },
+          };
 
       // Anomalia: série diária de pontos do usuário (período atual)
       const serie = snapshotsInPeriod.map((s) => s.pontosAcumulados);

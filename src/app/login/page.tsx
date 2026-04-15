@@ -54,7 +54,10 @@ function LoginForm() {
       setError("Credenciais inválidas");
       return;
     }
-    router.push(params.get("callbackUrl") ?? "/dashboard");
+    // Cai no root — `src/app/page.tsx` faz o redirect role-based
+    // (ADMIN → /mural, MEMBER → /dashboard). Respeita callbackUrl se presente.
+    router.push(params.get("callbackUrl") ?? "/");
+    router.refresh();
   }
 
   return (
