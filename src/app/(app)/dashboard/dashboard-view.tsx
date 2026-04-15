@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
 
@@ -17,12 +18,21 @@ import {
   TimerReset,
   Sparkles,
   Coins,
+  LifeBuoy,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatBRL } from "@/lib/money";
-import { formatMonth, formatDate } from "@/lib/date";
+import { formatDate, formatMonth } from "@/lib/date";
+import { formatHours } from "@/lib/duration";
 import { StreakBadge } from "@/components/game/streak-badge";
+import { PeriodPicker } from "@/components/filters/period-picker";
+
+interface SuporteData {
+  tasksClosed: number;
+  avgAckHours: number | null;
+  avgResolutionHours: number | null;
+}
 
 interface HostBreakdownEntry {
   hostId: string;
@@ -31,6 +41,7 @@ interface HostBreakdownEntry {
 }
 
 interface DashboardData {
+  periodo: { modo: string; de: string; ate: string; label: string };
   month: { year: number; month: number; totalDays: number; diasDecorridos: number; diasRestantes: number };
   parcial: {
     pontos: number;
@@ -41,6 +52,7 @@ interface DashboardData {
     date: string;
     hostBreakdown: HostBreakdownEntry[];
   } | null;
+  suporte: SuporteData | null;
   projecao: { pontos: number; valorTotal: number; deltaDia: number };
   snapshots: Array<{ date: string; valorParcial: number; pontos: number; sla: number }>;
   history: Array<{
@@ -67,16 +79,20 @@ export function DashboardView({
 }: {
   viewingUser?: { id: string; name: string };
 }) {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const query = useMemo(() => searchParams.toString(), [searchParams]);
+
   useEffect(() => {
-    const url = viewingUser ? `/api/dashboard?userId=${viewingUser.id}` : "/api/dashboard";
-    fetch(url)
+    const params = new URLSearchParams(query);
+    if (viewingUser) params.set("userId", viewingUser.id);
+    fetch(`/api/dashboard?${params.toString()}`)
       .then((r) => r.json())
       .then((d: DashboardData) => setData(d))
       .finally(() => setLoading(false));
-  }, [viewingUser]);
+  }, [viewingUser, query]);
 
   if (loading) return <DashboardSkeleton />;
   if (!data) return <p className="text-destructive">Erro ao carregar dados.</p>;
@@ -86,7 +102,7 @@ export function DashboardView({
     100,
     parcial ? (parcial.pontos / Math.max(1, data.streak.metaPontos)) * 100 : 0,
   );
-  const monthLabel = formatMonth(data.month.year, data.month.month);
+  const monthLabel = data.periodo.label;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
@@ -108,6 +124,10 @@ export function DashboardView({
           </a>
         </div>
       )}
+
+      <div className="flex justify-end">
+        <PeriodPicker />
+      </div>
 
       {/* HERO */}
       <motion.div
@@ -307,6 +327,36 @@ export function DashboardView({
         </Card>
       </div>
 
+      {/* Card de tasks de suporte atendidas (quando tem) */}
+      {data.suporte && data.suporte.tasksClosed > 0 && (
+        <Card className="border-orange-400/30 bg-orange-500/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <LifeBuoy className="h-4 w-4 text-orange-600" />
+              Tasks de suporte atendidas
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Demandas que você atendeu no período. Não pontuam, mas são medidas.
+            </p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <SuporteStat label="Volume" value={String(data.suporte.tasksClosed)} />
+              <SuporteStat
+                label="MTTA"
+                value={formatHours(data.suporte.avgAckHours)}
+                helper="tempo até assumir"
+              />
+              <SuporteStat
+                label="MTTR"
+                value={formatHours(data.suporte.avgResolutionHours)}
+                helper="tempo até resolver"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* History */}
       <Card>
         <CardHeader>
@@ -344,6 +394,26 @@ export function DashboardView({
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function SuporteStat({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+}) {
+  return (
+    <div className="rounded-md border bg-card/50 p-3">
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">
+        {label}
+      </p>
+      <p className="text-xl font-bold mt-0.5 whitespace-nowrap">{value}</p>
+      {helper && <p className="text-[11px] text-muted-foreground">{helper}</p>}
     </div>
   );
 }

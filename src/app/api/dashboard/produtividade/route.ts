@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { currentMonth, monthRange } from "@/lib/date";
+import { parsePeriodFromSearchParams } from "@/lib/date";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const userId = session.user.id;
-  const { year, month } = currentMonth();
-  const { from, to } = monthRange(year, month);
+  const url = new URL(request.url);
+  const periodo = parsePeriodFromSearchParams(url.searchParams);
+  const { from, to } = periodo;
 
   const [snapshots, last, hits, walletTxns, monthlyClose] = await Promise.all([
     prisma.taskMetricSnapshot.findMany({
@@ -23,7 +24,9 @@ export async function GET() {
       where: { userId, date: { gte: from, lte: to } },
       orderBy: { date: "desc" },
     }),
-    prisma.goalHit.count({ where: { goal: { userId }, year, month } }),
+    prisma.goalHit.count({
+      where: { goal: { userId }, hitAt: { gte: from, lte: to } },
+    }),
     prisma.coinTxn.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -37,7 +40,12 @@ export async function GET() {
   ]);
 
   return NextResponse.json({
-    month: { year, month },
+    periodo: {
+      modo: periodo.mode,
+      de: from.toISOString(),
+      ate: to.toISOString(),
+      label: periodo.label,
+    },
     last: last
       ? {
           tasksClosedMonth: last.tasksClosedMonth,
@@ -49,6 +57,20 @@ export async function GET() {
           tagsBreakdown: last.tagsBreakdown,
           priorityBreakdown: last.priorityBreakdown,
           date: last.date,
+          // Segmentado dev/suporte
+          dev: {
+            tasksClosed: last.tasksClosedMonthDev,
+            points: last.pointsMonthDev,
+            avgResolutionHours: last.avgResolutionHoursDev,
+            avgCycleHours: last.avgCycleHoursDev,
+          },
+          support: {
+            tasksClosed: last.tasksClosedMonthSupport,
+            avgResolutionHours: last.avgResolutionHoursSupport,
+            avgCycleHours: last.avgCycleHoursSupport,
+            avgAckHours: last.avgAckHoursSupport,
+          },
+          returnedCount: last.returnedCountMonth,
         }
       : null,
     series: snapshots.map((s) => ({
@@ -57,8 +79,10 @@ export async function GET() {
       tasksClosedWeek: s.tasksClosedWeek,
       avgResolutionHoursMonth: s.avgResolutionHoursMonth,
       avgCycleHoursMonth: s.avgCycleHoursMonth,
+      tasksClosedDev: s.tasksClosedMonthDev,
+      tasksClosedSupport: s.tasksClosedMonthSupport,
     })),
-    goalHitsThisMonth: hits,
+    goalHits: hits,
     walletTxns,
     history: monthlyClose,
   });

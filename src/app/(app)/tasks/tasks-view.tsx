@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   CheckCircle2,
   Clock,
@@ -14,8 +15,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PeriodPicker } from "@/components/filters/period-picker";
 import { formatHours } from "@/lib/duration";
-import { formatDate, formatMonth } from "@/lib/date";
+import { formatDate } from "@/lib/date";
+
+type TaskType = "dev" | "support" | "ignored";
 
 interface TaskRow {
   id: string;
@@ -31,10 +35,11 @@ interface TaskRow {
   cycleHours: number | null;
   passedExecution: boolean;
   ageHours: number | null;
+  type: TaskType;
 }
 
 interface TasksData {
-  month: { year: number; month: number };
+  period: { from: string; to: string };
   executionStatuses: string[];
   tis: { enabled: boolean | null; message?: string };
   closed: {
@@ -70,17 +75,26 @@ const PRIORITY_LABEL: Record<NonNullable<TaskRow["priority"]>, string> = {
 };
 
 type Tab = "closed" | "pending";
+type TypeFilter = "all" | "dev" | "support";
+type PriorityFilter = "all" | NonNullable<TaskRow["priority"]>;
 
 export function TasksView() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<TasksData | null>(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<Tab>("closed");
   const [query, setQuery] = useState("");
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+
+  const periodQuery = useMemo(() => searchParams.toString(), [searchParams]);
 
   async function load(force: boolean) {
     setLoading(true);
     try {
-      const r = await fetch(force ? "/api/me/tasks?force=1" : "/api/me/tasks");
+      const params = new URLSearchParams(periodQuery);
+      if (force) params.set("force", "1");
+      const r = await fetch(`/api/me/tasks?${params.toString()}`);
       const j = (await r.json()) as TasksData;
       setData(j);
     } finally {
@@ -90,7 +104,8 @@ export function TasksView() {
 
   useEffect(() => {
     load(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [periodQuery]);
 
   if (loading && !data) {
     return (
@@ -121,13 +136,16 @@ export function TasksView() {
   }
 
   const activeList = tab === "closed" ? data.closed.tasks : data.pending.tasks;
-  const filtered = query
-    ? activeList.filter((t) =>
-        (t.name + " " + (t.customId ?? "") + " " + (t.status ?? ""))
-          .toLowerCase()
-          .includes(query.toLowerCase()),
-      )
-    : activeList;
+  const filtered = activeList.filter((t) => {
+    if (typeFilter === "dev" && t.type !== "dev") return false;
+    if (typeFilter === "support" && t.type !== "support") return false;
+    if (priorityFilter !== "all" && t.priority !== priorityFilter) return false;
+    if (query) {
+      const hay = (t.name + " " + (t.customId ?? "") + " " + (t.status ?? "")).toLowerCase();
+      if (!hay.includes(query.toLowerCase())) return false;
+    }
+    return true;
+  });
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -139,13 +157,16 @@ export function TasksView() {
           </h2>
           <p className="text-sm text-muted-foreground">
             Tudo o que está atribuído a você. Tempo de resolução é{" "}
-            <em>fechada — criada</em>. Período: {formatMonth(data.month.year, data.month.month)}.
+            <em>fechada — criada</em>.
           </p>
         </div>
-        <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
-          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-          Atualizar
-        </Button>
+        <div className="flex items-center gap-2">
+          <PeriodPicker />
+          <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Atualizar
+          </Button>
+        </div>
       </div>
 
       {/* Aviso TIS */}
@@ -167,14 +188,15 @@ export function TasksView() {
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
           icon={CheckCircle2}
-          title="Concluídas no mês"
+          title="Concluídas"
           value={String(data.closed.total)}
           tone="success"
         />
         <Kpi
           icon={Target}
-          title="Pontos entregues"
+          title="Pontos entregues (dev)"
           value={String(data.closed.pointsTotal)}
+          helper="suporte não pontua"
         />
         <Kpi
           icon={Clock}
@@ -190,15 +212,15 @@ export function TasksView() {
           icon={Hourglass}
           title="Pendentes"
           value={String(data.pending.total)}
-          helper={`${data.pending.pointsTotal} pontos previstos`}
+          helper={`${data.pending.pointsTotal} pontos dev previstos`}
           tone="warning"
         />
       </div>
 
-      {/* Tabs + busca */}
+      {/* Tabs + filtros */}
       <Card>
-        <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex gap-2">
+        <CardHeader className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             <TabButton
               active={tab === "closed"}
               onClick={() => setTab("closed")}
@@ -215,21 +237,67 @@ export function TasksView() {
             >
               Pendentes
             </TabButton>
+            <div className="flex-1" />
+            <Input
+              placeholder="Buscar por nome, ID ou status…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="sm:max-w-xs"
+            />
           </div>
-          <Input
-            placeholder="Buscar por nome, ID ou status…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="sm:max-w-xs"
-          />
+          <div className="flex flex-wrap gap-2">
+            <FilterGroup label="Tipo">
+              <FilterChip active={typeFilter === "all"} onClick={() => setTypeFilter("all")}>
+                Todas
+              </FilterChip>
+              <FilterChip active={typeFilter === "dev"} onClick={() => setTypeFilter("dev")}>
+                Desenvolvimento
+              </FilterChip>
+              <FilterChip active={typeFilter === "support"} onClick={() => setTypeFilter("support")}>
+                Suporte
+              </FilterChip>
+            </FilterGroup>
+            <FilterGroup label="Prioridade">
+              <FilterChip
+                active={priorityFilter === "all"}
+                onClick={() => setPriorityFilter("all")}
+              >
+                Todas
+              </FilterChip>
+              <FilterChip
+                active={priorityFilter === "urgent"}
+                onClick={() => setPriorityFilter("urgent")}
+              >
+                Urgente
+              </FilterChip>
+              <FilterChip
+                active={priorityFilter === "high"}
+                onClick={() => setPriorityFilter("high")}
+              >
+                Alta
+              </FilterChip>
+              <FilterChip
+                active={priorityFilter === "normal"}
+                onClick={() => setPriorityFilter("normal")}
+              >
+                Normal
+              </FilterChip>
+              <FilterChip
+                active={priorityFilter === "low"}
+                onClick={() => setPriorityFilter("low")}
+              >
+                Baixa
+              </FilterChip>
+            </FilterGroup>
+          </div>
         </CardHeader>
         <CardContent>
           {filtered.length === 0 ? (
             <p className="text-sm text-muted-foreground py-6 text-center">
-              {query
-                ? "Nenhuma task bate com a busca."
+              {query || typeFilter !== "all" || priorityFilter !== "all"
+                ? "Nenhuma task bate com os filtros."
                 : tab === "closed"
-                  ? "Nenhuma task concluída neste mês."
+                  ? "Nenhuma task concluída neste período."
                   : "Nenhuma task pendente. 🎉"}
             </p>
           ) : (
@@ -245,13 +313,7 @@ export function TasksView() {
   );
 }
 
-function TaskRowCard({
-  task,
-  mode,
-}: {
-  task: TaskRow;
-  mode: Tab;
-}) {
+function TaskRowCard({ task, mode }: { task: TaskRow; mode: Tab }) {
   return (
     <a
       href={task.url}
@@ -267,6 +329,7 @@ function TaskRowCard({
               {task.customId}
             </span>
           )}
+          <TypeBadge type={task.type} />
           {task.priority && (
             <span
               className={`text-[10px] uppercase tracking-wider rounded px-1.5 py-0.5 font-medium ${PRIORITY_COLOR[task.priority]}`}
@@ -314,11 +377,31 @@ function TaskRowCard({
       </div>
       <div className="flex items-center gap-3 sm:flex-col sm:items-end">
         <span className="text-sm font-bold tabular-nums text-primary">
-          {task.points != null ? `${task.points} pt` : "—"}
+          {task.type === "dev" && task.points != null ? `${task.points} pt` : "—"}
         </span>
         <ExternalLink className="h-3.5 w-3.5 text-muted-foreground group-hover:text-primary" />
       </div>
     </a>
+  );
+}
+
+function TypeBadge({ type }: { type: TaskType }) {
+  if (type === "dev")
+    return (
+      <Badge variant="secondary" className="text-[10px] bg-primary/10 text-primary">
+        dev
+      </Badge>
+    );
+  if (type === "support")
+    return (
+      <Badge variant="secondary" className="text-[10px] bg-orange-500/10 text-orange-600">
+        suporte
+      </Badge>
+    );
+  return (
+    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+      ignorada
+    </Badge>
   );
 }
 
@@ -354,6 +437,47 @@ function TabButton({
       >
         {count}
       </span>
+    </button>
+  );
+}
+
+function FilterGroup({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[11px] uppercase tracking-wide text-muted-foreground mr-1">
+        {label}:
+      </span>
+      {children}
+    </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-2.5 py-0.5 text-[11px] transition-colors ${
+        active
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border text-muted-foreground hover:border-primary/40"
+      }`}
+    >
+      {children}
     </button>
   );
 }

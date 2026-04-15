@@ -146,6 +146,8 @@ export interface AuditedTask {
   dateCreated: number | null;
   dateClosed: number | null;
   url: string;
+  listId: string | null;
+  folderId: string | null;
 }
 
 export async function getAuditedTasksForUser(
@@ -170,6 +172,8 @@ function toAudited(t: ClickUpRawTaskWithAssignees): AuditedTask {
     dateCreated: t.date_created ? Number(t.date_created) : null,
     dateClosed: t.date_closed ? Number(t.date_closed) : null,
     url: `https://app.clickup.com/t/${t.id}`,
+    listId: t.list?.id ?? null,
+    folderId: t.folder?.id ?? null,
   };
 }
 

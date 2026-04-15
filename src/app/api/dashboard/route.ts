@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { currentMonth, daysInMonth, monthRange } from "@/lib/date";
+import {
+  currentMonth,
+  daysInMonth,
+  monthRange,
+  parsePeriodFromSearchParams,
+} from "@/lib/date";
 import { computeStreak } from "@/lib/gamification";
 import { loadConfig } from "@/lib/config";
 
@@ -30,13 +35,20 @@ export async function GET(request: Request) {
     userId = targetUserId;
   }
 
+  const periodo = parsePeriodFromSearchParams(url.searchParams);
+  const { from, to } = periodo;
   const { year, month } = currentMonth();
-  const { from, to } = monthRange(year, month);
+  // Pra projeção linear, sempre usamos o mês corrente (faz sentido só no "mês").
+  const projectionMonth = monthRange(year, month);
 
-  const [snapshots, history, config] = await Promise.all([
+  const [snapshots, taskMetric, history, config] = await Promise.all([
     prisma.dailySnapshot.findMany({
       where: { userId, date: { gte: from, lte: to } },
       orderBy: { date: "asc" },
+    }),
+    prisma.taskMetricSnapshot.findFirst({
+      where: { userId, date: { gte: from, lte: to } },
+      orderBy: { date: "desc" },
     }),
     prisma.monthlyClose.findMany({
       where: { userId },
@@ -53,15 +65,24 @@ export async function GET(request: Request) {
     config.metaSlaStreak,
   );
 
-  // Projeção linear do mês corrente
+  // Projeção linear do mês corrente (só faz sentido no modo "mês")
   const now = new Date();
   const today = now.getUTCDate();
   const totalDays = daysInMonth(year, month);
   const diasRestantes = Math.max(0, totalDays - today);
   const diasDecorridos = Math.max(1, today);
-  const projecaoPontos = last ? Math.round((last.pontosAcumulados / diasDecorridos) * totalDays) : 0;
-  const projecaoValor = last
-    ? Math.round((last.valorParcial / diasDecorridos) * totalDays * 100) / 100
+  const latestMonthSnap = await prisma.dailySnapshot.findFirst({
+    where: {
+      userId,
+      date: { gte: projectionMonth.from, lte: projectionMonth.to },
+    },
+    orderBy: { date: "desc" },
+  });
+  const projecaoPontos = latestMonthSnap
+    ? Math.round((latestMonthSnap.pontosAcumulados / diasDecorridos) * totalDays)
+    : 0;
+  const projecaoValor = latestMonthSnap
+    ? Math.round((latestMonthSnap.valorParcial / diasDecorridos) * totalDays * 100) / 100
     : 0;
   const deltaDia = last && previous ? last.valorParcial - previous.valorParcial : 0;
 
@@ -69,6 +90,12 @@ export async function GET(request: Request) {
     (last?.hostBreakdown as HostBreakdownEntry[] | null) ?? [];
 
   return NextResponse.json({
+    periodo: {
+      modo: periodo.mode,
+      de: from.toISOString(),
+      ate: to.toISOString(),
+      label: periodo.label,
+    },
     month: { year, month, totalDays, diasDecorridos, diasRestantes },
     parcial: last
       ? {
@@ -79,6 +106,13 @@ export async function GET(request: Request) {
           valorParcial: last.valorParcial,
           date: last.date,
           hostBreakdown,
+        }
+      : null,
+    suporte: taskMetric
+      ? {
+          tasksClosed: taskMetric.tasksClosedMonthSupport,
+          avgAckHours: taskMetric.avgAckHoursSupport,
+          avgResolutionHours: taskMetric.avgResolutionHoursSupport,
         }
       : null,
     projecao: {

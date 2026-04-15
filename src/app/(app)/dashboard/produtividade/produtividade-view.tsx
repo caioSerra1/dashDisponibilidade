@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import {
   TrendingUp,
@@ -10,12 +11,13 @@ import {
   Zap,
   ExternalLink,
   Search,
+  LifeBuoy,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { PeriodPicker } from "@/components/filters/period-picker";
+import { MetricLabel } from "@/components/ui/metric-label";
 import { formatHours } from "@/lib/duration";
-import { formatDate } from "@/lib/date";
 
 const TasksBarChart = dynamic(
   () => import("@/components/charts/tasks-bar").then((m) => m.TasksBarChart),
@@ -30,8 +32,16 @@ const PriorityPieChart = dynamic(
   { ssr: false, loading: () => <div className="h-56 animate-pulse bg-muted/40 rounded-md" /> },
 );
 
+interface LastBreakdown {
+  tasksClosed: number;
+  points?: number;
+  avgResolutionHours: number | null;
+  avgCycleHours: number | null;
+  avgAckHours?: number | null;
+}
+
 interface ProdData {
-  month: { year: number; month: number };
+  periodo: { modo: string; de: string; ate: string; label: string };
   last: {
     tasksClosedMonth: number;
     tasksClosedWeek: number;
@@ -42,6 +52,9 @@ interface ProdData {
     tagsBreakdown: Array<{ tag: string; count: number }> | null;
     priorityBreakdown: { urgent: number; high: number; normal: number; low: number } | null;
     date: string;
+    dev: LastBreakdown;
+    support: LastBreakdown;
+    returnedCount: number;
   } | null;
   series: Array<{
     date: string;
@@ -49,21 +62,29 @@ interface ProdData {
     tasksClosedWeek: number;
     avgResolutionHoursMonth: number | null;
     avgCycleHoursMonth: number | null;
+    tasksClosedDev: number;
+    tasksClosedSupport: number;
   }>;
-  goalHitsThisMonth: number;
-  walletTxns: Array<{ id: string; delta: number; reason: string; createdAt: string }>;
+  goalHits: number;
 }
 
+type TypeFilter = "all" | "dev" | "support";
+
 export function ProdutividadeView() {
+  const searchParams = useSearchParams();
   const [data, setData] = useState<ProdData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+
+  const query = useMemo(() => searchParams.toString(), [searchParams]);
 
   useEffect(() => {
-    fetch("/api/dashboard/produtividade")
+    setLoading(true);
+    fetch(`/api/dashboard/produtividade?${query}`)
       .then((r) => r.json())
-      .then((d) => setData(d))
+      .then((d: ProdData) => setData(d))
       .finally(() => setLoading(false));
-  }, []);
+  }, [query]);
 
   if (loading) return <p className="text-muted-foreground">Carregando…</p>;
   if (!data) return <p className="text-destructive">Erro.</p>;
@@ -81,47 +102,126 @@ export function ProdutividadeView() {
         .map(([name, value]) => ({ name: PRIORITY_PT[name] ?? name, value }))
     : [];
 
+  // Seleciona as métricas do filtro
+  const viewTasks =
+    typeFilter === "dev"
+      ? last?.dev.tasksClosed ?? 0
+      : typeFilter === "support"
+        ? last?.support.tasksClosed ?? 0
+        : last?.tasksClosedMonth ?? 0;
+  const viewResolution =
+    typeFilter === "dev"
+      ? last?.dev.avgResolutionHours ?? null
+      : typeFilter === "support"
+        ? last?.support.avgResolutionHours ?? null
+        : last?.avgResolutionHoursMonth ?? null;
+  const viewCycle =
+    typeFilter === "dev"
+      ? last?.dev.avgCycleHours ?? null
+      : typeFilter === "support"
+        ? last?.support.avgCycleHours ?? null
+        : last?.avgCycleHoursMonth ?? null;
+
   return (
     <div className="space-y-6 max-w-7xl">
-      <div>
-        <h2 className="text-2xl font-bold flex items-center gap-2">
-          <Activity className="h-6 w-6 text-primary" />
-          Minha produtividade
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Métricas reais derivadas das suas tasks no ClickUp.
-        </p>
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold flex items-center gap-2">
+            <Activity className="h-6 w-6 text-primary" />
+            Minha produtividade
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Métricas reais derivadas das suas tasks no ClickUp — {data.periodo.label}.
+          </p>
+        </div>
+        <PeriodPicker />
+      </div>
+
+      {/* Toggle tipo */}
+      <div className="flex flex-wrap gap-1.5">
+        <TypeChip active={typeFilter === "all"} onClick={() => setTypeFilter("all")}>
+          Ambos
+        </TypeChip>
+        <TypeChip active={typeFilter === "dev"} onClick={() => setTypeFilter("dev")}>
+          Desenvolvimento
+        </TypeChip>
+        <TypeChip active={typeFilter === "support"} onClick={() => setTypeFilter("support")}>
+          Suporte
+        </TypeChip>
       </div>
 
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Kpi
+        <KpiCard
           icon={ListChecks}
-          title="Tasks no mês"
-          value={String(last?.tasksClosedMonth ?? 0)}
+          sigla="Tasks"
+          nome={
+            typeFilter === "dev"
+              ? "Tasks de desenvolvimento concluídas no período"
+              : typeFilter === "support"
+                ? "Tasks de suporte concluídas no período"
+                : "Total de tasks concluídas no período"
+          }
+          value={String(viewTasks)}
           helper={`${last?.tasksClosedWeek ?? 0} nos últimos 7 dias`}
         />
-        <Kpi
+        <KpiCard
           icon={Target}
-          title="Pontos entregues"
-          value={String(last?.pointsMonth ?? 0)}
+          sigla="Pontos (dev)"
+          nome="Pontos de sprint entregues (suporte não pontua)"
+          value={String(last?.dev.points ?? 0)}
         />
-        <Kpi
+        <KpiCard
           icon={Clock}
-          title="Tempo médio resolução"
-          value={formatHours(last?.avgResolutionHoursMonth)}
+          sigla="MTTR"
+          nome="Tempo médio até resolver uma demanda"
+          value={formatHours(viewResolution)}
           helper={
-            last?.avgCycleHoursMonth != null
-              ? `ciclo ${formatHours(last.avgCycleHoursMonth)}`
-              : undefined
+            viewCycle != null ? `ciclo (execução → fechar): ${formatHours(viewCycle)}` : undefined
           }
         />
-        <Kpi
+        <KpiCard
           icon={Zap}
-          title="Metas batidas no mês"
-          value={String(data.goalHitsThisMonth)}
+          sigla="Metas batidas"
+          nome="Metas do período já batidas"
+          value={String(data.goalHits)}
         />
       </div>
+
+      {/* Card dedicado de suporte */}
+      {(last?.support.tasksClosed ?? 0) > 0 && typeFilter !== "dev" && (
+        <Card className="border-orange-400/30 bg-orange-500/5">
+          <CardContent className="p-5">
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-orange-500/15 text-orange-600">
+                <LifeBuoy className="h-5 w-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <MetricLabel
+                  sigla="Tasks de suporte atendidas"
+                  nome="Demandas de suporte que você atendeu no período"
+                />
+                <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                  <SupportStat
+                    label="Volume"
+                    value={String(last?.support.tasksClosed ?? 0)}
+                  />
+                  <SupportStat
+                    label="MTTA"
+                    value={formatHours(last?.support.avgAckHours ?? null)}
+                    helper="até assumir"
+                  />
+                  <SupportStat
+                    label="MTTR"
+                    value={formatHours(last?.support.avgResolutionHours ?? null)}
+                    helper="até resolver"
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Throughput */}
@@ -129,7 +229,7 @@ export function ProdutividadeView() {
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" />
-              Tasks fechadas por dia (acumulado do mês)
+              Tasks fechadas por dia (acumulado do período)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -206,14 +306,40 @@ export function ProdutividadeView() {
   );
 }
 
-function Kpi({
+function TypeChip({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+        active
+          ? "border-primary bg-primary/10 text-primary"
+          : "border-border text-muted-foreground hover:border-primary/40"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function KpiCard({
   icon: Icon,
-  title,
+  sigla,
+  nome,
   value,
   helper,
 }: {
   icon: React.ComponentType<{ className?: string }>;
-  title: string;
+  sigla: string;
+  nome: string;
   value: string;
   helper?: string;
 }) {
@@ -221,14 +347,32 @@ function Kpi({
     <Card>
       <CardContent className="p-5 flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-muted-foreground uppercase tracking-wide">{title}</p>
-          <p className="text-2xl font-bold mt-1.5 whitespace-nowrap">{value}</p>
-          {helper && <p className="text-xs text-muted-foreground mt-1">{helper}</p>}
+          <MetricLabel sigla={sigla} nome={nome} />
+          <p className="text-2xl font-bold mt-2 whitespace-nowrap">{value}</p>
+          {helper && <p className="text-xs text-muted-foreground mt-1 truncate">{helper}</p>}
         </div>
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
           <Icon className="h-5 w-5 text-primary" />
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function SupportStat({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper?: string;
+}) {
+  return (
+    <div className="rounded-md border bg-card/50 p-2">
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-base font-bold mt-0.5">{value}</p>
+      {helper && <p className="text-[10px] text-muted-foreground">{helper}</p>}
+    </div>
   );
 }

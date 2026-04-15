@@ -8,7 +8,8 @@ import {
   type AuditedTask,
 } from "@/lib/clickup";
 import { loadConfig } from "@/lib/config";
-import { currentMonth, monthRange } from "@/lib/date";
+import { parsePeriodFromSearchParams } from "@/lib/date";
+import { classifyTask, type TaskType } from "@/lib/metrics";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,6 +23,7 @@ interface TaskRow extends AuditedTask {
   executionStartMs: number | null;
   passedExecution: boolean;
   ageHours: number | null;
+  type: TaskType;
 }
 
 interface CachedPayload {
@@ -31,8 +33,8 @@ interface CachedPayload {
 
 const cache = new Map<string, CachedPayload>();
 
-function cacheKey(userId: string, year: number, month: number): string {
-  return `${userId}:${year}-${month}`;
+function cacheKey(userId: string, periodKey: string): string {
+  return `${userId}:${periodKey}`;
 }
 
 function avg(values: readonly number[]): number | null {
@@ -44,6 +46,7 @@ function avg(values: readonly number[]): number | null {
 async function enrichClosed(
   tasks: AuditedTask[],
   executionStatuses: string[],
+  classify: (t: AuditedTask) => TaskType,
 ): Promise<{ rows: TaskRow[]; tisEnabled: boolean | null; tisMessage?: string }> {
   const now = Date.now();
 
@@ -59,8 +62,7 @@ async function enrichClosed(
   );
 
   const okCount = results.filter((r) => r.ok).length;
-  const tisEnabled: boolean | null =
-    results.length === 0 ? null : okCount > 0;
+  const tisEnabled: boolean | null = results.length === 0 ? null : okCount > 0;
   const tisMessage = results.find((r) => !r.ok)?.message;
 
   const rows: TaskRow[] = tasks.map((t, i) => {
@@ -89,13 +91,17 @@ async function enrichClosed(
         t.dateCreated != null
           ? Math.round(((now - t.dateCreated) / HOUR_MS) * 100) / 100
           : null,
+      type: classify(t),
     };
   });
 
   return { rows, tisEnabled, tisMessage };
 }
 
-function enrichPending(tasks: AuditedTask[]): TaskRow[] {
+function enrichPending(
+  tasks: AuditedTask[],
+  classify: (t: AuditedTask) => TaskType,
+): TaskRow[] {
   const now = Date.now();
   return tasks.map((t) => ({
     ...t,
@@ -107,16 +113,21 @@ function enrichPending(tasks: AuditedTask[]): TaskRow[] {
       t.dateCreated != null
         ? Math.round(((now - t.dateCreated) / HOUR_MS) * 100) / 100
         : null,
+    type: classify(t),
   }));
 }
 
 async function buildPayload(
   clickupUserId: string,
-  year: number,
-  month: number,
+  from: Date,
+  to: Date,
 ): Promise<unknown> {
   const config = await loadConfig();
-  const { from, to } = monthRange(year, month);
+  const classify = (t: AuditedTask): TaskType =>
+    classifyTask(
+      { listId: t.listId, folderId: t.folderId },
+      config.taskClassification,
+    );
 
   const { closedInPeriod, pending } = await getAllAssignedTasks(
     clickupUserId,
@@ -127,8 +138,9 @@ async function buildPayload(
   const { rows: closed, tisEnabled, tisMessage } = await enrichClosed(
     closedInPeriod,
     config.executionStatuses,
+    classify,
   );
-  const pendingEnriched = enrichPending(pending);
+  const pendingEnriched = enrichPending(pending, classify);
 
   const cycleValues = closed
     .map((t) => t.cycleHours)
@@ -137,8 +149,13 @@ async function buildPayload(
     .map((t) => t.resolutionHours)
     .filter((h): h is number => h != null);
 
+  // Pontos totais = só dev (suporte e ignorados não pontuam)
+  const pointsTotal = closed
+    .filter((t) => t.type === "dev")
+    .reduce((acc, t) => acc + (t.points ?? 0), 0);
+
   return {
-    month: { year, month },
+    period: { from: from.toISOString(), to: to.toISOString() },
     clickupUserId,
     executionStatuses: config.executionStatuses,
     tis: {
@@ -147,7 +164,7 @@ async function buildPayload(
     },
     closed: {
       total: closed.length,
-      pointsTotal: closed.reduce((acc, t) => acc + (t.points ?? 0), 0),
+      pointsTotal,
       countedForCycle: cycleValues.length,
       skippedNoExecution: closed.filter((t) => !t.passedExecution).length,
       avgCycleHours: avg(cycleValues),
@@ -156,7 +173,9 @@ async function buildPayload(
     },
     pending: {
       total: pendingEnriched.length,
-      pointsTotal: pendingEnriched.reduce((acc, t) => acc + (t.points ?? 0), 0),
+      pointsTotal: pendingEnriched
+        .filter((t) => t.type === "dev")
+        .reduce((acc, t) => acc + (t.points ?? 0), 0),
       tasks: pendingEnriched,
     },
   };
@@ -172,34 +191,27 @@ export async function GET(req: Request) {
   });
   if (!user?.clickupUserId) {
     return NextResponse.json({
-      closed: {
-        total: 0,
-        pointsTotal: 0,
-        avgCycleHours: null,
-        avgResolutionHours: null,
-        tasks: [],
-      },
+      closed: { total: 0, pointsTotal: 0, avgCycleHours: null, avgResolutionHours: null, tasks: [] },
       pending: { total: 0, pointsTotal: 0, tasks: [] },
       reason: "Sem ID ClickUp vinculado.",
     });
   }
 
-  const { year, month } = currentMonth();
-  const key = cacheKey(user.clickupUserId, year, month);
   const url = new URL(req.url);
+  const periodo = parsePeriodFromSearchParams(url.searchParams);
+  const periodKey = `${periodo.mode}:${periodo.from.toISOString()}:${periodo.to.toISOString()}`;
+  const key = cacheKey(user.clickupUserId, periodKey);
   const force = url.searchParams.get("force") === "1";
 
   if (!force) {
     const hit = cache.get(key);
     if (hit && Date.now() - hit.storedAt < CACHE_TTL_MS) {
-      return NextResponse.json(hit.body, {
-        headers: { "x-cache": "HIT" },
-      });
+      return NextResponse.json(hit.body, { headers: { "x-cache": "HIT" } });
     }
   }
 
   try {
-    const body = await buildPayload(user.clickupUserId, year, month);
+    const body = await buildPayload(user.clickupUserId, periodo.from, periodo.to);
     cache.set(key, { body, storedAt: Date.now() });
     return NextResponse.json(body, { headers: { "x-cache": "MISS" } });
   } catch (e) {
