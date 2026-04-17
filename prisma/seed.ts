@@ -13,14 +13,10 @@ const DEFAULT_SLA_TIERS = [
 
 const DEFAULT_TASK_CLASSIFICATION = {
   dev: {
-    // Product Backlog no ClickUp
     listIds: ["901321219372"],
-    // Folder ID da pasta "Sprints Semanais" — admin preenche manualmente
-    // via /admin/config depois de olhar a URL do folder no ClickUp.
-    folderIds: [] as string[],
+    folderIds: ["901314217806"],
   },
   support: {
-    // Demandas de Suporte no ClickUp
     listIds: ["901321219373"],
     folderIds: [] as string[],
   },
