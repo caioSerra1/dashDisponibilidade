@@ -240,6 +240,5 @@ export async function GET(request: Request) {
         }
       : null,
     membros: allCards,
-    heatmap: Array.from({ length: 7 }, () => Array(24).fill(0)),
   });
 }

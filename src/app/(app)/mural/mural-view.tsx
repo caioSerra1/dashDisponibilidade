@@ -9,6 +9,7 @@ import {
   FileText,
   ExternalLink,
   Users,
+  RefreshCw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/avatar";
@@ -81,7 +82,6 @@ interface MuralPayload {
     };
   } | null;
   membros: MemberCard[];
-  heatmap: number[][];
 }
 
 export function MuralView() {
@@ -89,16 +89,43 @@ export function MuralView() {
   const [data, setData] = useState<MuralPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeMember, setActiveMember] = useState<MemberCard | null>(null);
+  const [heatmapGrid, setHeatmapGrid] = useState<number[][] | null>(null);
+  const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<string | null>(null);
 
   const query = useMemo(() => searchParams.toString(), [searchParams]);
 
-  useEffect(() => {
+  function loadData() {
     setLoading(true);
+    setHeatmapGrid(null);
     fetch(`/api/mural?${query}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: MuralPayload) => setData(d))
+      .then((d: MuralPayload) => {
+        setData(d);
+        setLastSync(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
+      })
       .finally(() => setLoading(false));
-  }, [query]);
+
+    setHeatmapLoading(true);
+    fetch(`/api/mural/heatmap?${query}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d: { heatmap: number[][] }) => setHeatmapGrid(d.heatmap))
+      .catch(() => setHeatmapGrid(null))
+      .finally(() => setHeatmapLoading(false));
+  }
+
+  useEffect(() => { loadData(); }, [query]);
+
+  async function handleSync() {
+    setSyncing(true);
+    try {
+      await fetch("/api/admin/sync", { method: "POST" });
+      loadData();
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
@@ -110,9 +137,25 @@ export function MuralView() {
           </h2>
           <p className="text-sm text-muted-foreground">
             Visão consolidada da equipe — {data?.periodo.label ?? "carregando…"}
+            {lastSync && (
+              <span className="ml-2 text-[10px] text-muted-foreground/60">
+                (atualizado às {lastSync})
+              </span>
+            )}
           </p>
         </div>
-        <PeriodPicker />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleSync}
+            disabled={syncing}
+            className="inline-flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm font-medium hover:border-primary/40 transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "Sincronizando…" : "Sincronizar"}
+          </button>
+          <PeriodPicker />
+        </div>
       </div>
 
       {loading || !data ? (
@@ -133,7 +176,17 @@ export function MuralView() {
                 </p>
               </CardHeader>
               <CardContent>
-                <TeamHeatmap grid={data.heatmap} />
+                {heatmapLoading ? (
+                  <div className="h-48 animate-pulse bg-muted/40 rounded-md flex items-center justify-center">
+                    <p className="text-xs text-muted-foreground">Carregando heatmap do ClickUp…</p>
+                  </div>
+                ) : heatmapGrid ? (
+                  <TeamHeatmap grid={heatmapGrid} />
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center py-8">
+                    Sem dados de tasks fechadas no período.
+                  </p>
+                )}
               </CardContent>
             </Card>
 

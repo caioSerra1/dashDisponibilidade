@@ -281,6 +281,8 @@ export async function getClosedAndPendingTasks(
     throw new Error("Credenciais do ClickUp ausentes");
   }
 
+  const MAX_PAGES = 10;
+
   async function fetchPage(params: Record<string, string>): Promise<ClickUpRawTaskWithAssignees[]> {
     const url = new URL(`${BASE}/team/${CLICKUP_TEAM_ID}/task`);
     url.searchParams.set("subtasks", "true");
@@ -297,21 +299,33 @@ export async function getClosedAndPendingTasks(
     return (data.tasks ?? []) as ClickUpRawTaskWithAssignees[];
   }
 
+  async function fetchAllPages(
+    baseParams: Record<string, string>,
+  ): Promise<ClickUpRawTaskWithAssignees[]> {
+    const all: ClickUpRawTaskWithAssignees[] = [];
+    let page = 0;
+    while (page < MAX_PAGES) {
+      const batch = await fetchPage({ ...baseParams, page: String(page) });
+      all.push(...batch);
+      if (batch.length < 100) break;
+      page++;
+    }
+    return all;
+  }
+
   const userIdNum = Number(clickupUserId);
   const fromMs = closedFrom.getTime();
   const toMs = closedTo.getTime();
 
-  // Executa ambas em paralelo — 2 calls em vez de 5 sequenciais
+  // Ambas paginam internamente; as 2 queries rodam em paralelo
   const [closedRaw, pendingRaw] = await Promise.all([
-    fetchPage({
+    fetchAllPages({
       include_closed: "true",
       date_closed_gt: String(fromMs),
       date_closed_lt: String(toMs),
-      page: "0",
     }),
-    fetchPage({
+    fetchAllPages({
       include_closed: "false",
-      page: "0",
     }),
   ]);
 
