@@ -87,6 +87,7 @@ export function MuralView() {
   const [activeMember, setActiveMember] = useState<MemberCard | null>(null);
   const [heatmapGrid, setHeatmapGrid] = useState<number[][] | null>(null);
   const [heatmapLoading, setHeatmapLoading] = useState(false);
+  const [wipByUser, setWipByUser] = useState<Record<string, number>>({});
   const [syncing, setSyncing] = useState(false);
   const [lastSync, setLastSync] = useState<string | null>(null);
 
@@ -106,8 +107,14 @@ export function MuralView() {
     setHeatmapLoading(true);
     fetch(`/api/mural/heatmap?${query}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((d: { heatmap: number[][] }) => setHeatmapGrid(d.heatmap))
-      .catch(() => setHeatmapGrid(null))
+      .then((d: { heatmap: number[][]; wipByUser?: Record<string, number> }) => {
+        setHeatmapGrid(d.heatmap);
+        setWipByUser(d.wipByUser ?? {});
+      })
+      .catch(() => {
+        setHeatmapGrid(null);
+        setWipByUser({});
+      })
       .finally(() => setHeatmapLoading(false));
   }
 
@@ -194,7 +201,12 @@ export function MuralView() {
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : (
         <>
-          <TeamKpis kpis={data.kpisEquipe} />
+          <TeamKpis kpis={{
+            ...data.kpisEquipe,
+            wipAtual: Object.keys(wipByUser).length > 0
+              ? Object.values(wipByUser).reduce((a, b) => a + b, 0)
+              : data.kpisEquipe.wipAtual,
+          }} />
 
           <Card>
             <CardHeader>
@@ -236,13 +248,17 @@ export function MuralView() {
               </Card>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
-                {data.membros.map((m) => (
-                  <MemberCardBlock
-                    key={m.userId}
-                    member={m}
-                    onOpen1on1={() => setActiveMember(m)}
-                  />
-                ))}
+                {data.membros.map((m) => {
+                  const liveWip = wipByUser[m.userId];
+                  const memberWithWip = liveWip != null ? { ...m, wipAtual: liveWip } : m;
+                  return (
+                    <MemberCardBlock
+                      key={m.userId}
+                      member={memberWithWip}
+                      onOpen1on1={() => setActiveMember(memberWithWip)}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>
