@@ -131,7 +131,7 @@ export async function GET(request: Request) {
         try {
           const fallbackConfig = await loadConfigForFallback();
           const tasks = await getTasksForUser(u.clickupUserId, from, to);
-          const metrics = computeTaskMetrics(tasks, to.getTime(), fallbackConfig.taskClassification);
+          const metrics = computeTaskMetrics(tasks, to.getTime(), fallbackConfig.taskClassification, fallbackConfig.maxExecDays);
           pontosDev = metrics.pointsSum;
           tasksDev = metrics.byType.dev.tasksClosed;
           tasksSuporte = metrics.byType.support.tasksClosed;

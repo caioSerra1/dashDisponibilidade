@@ -11,6 +11,7 @@ const schema = z.object({
   valorPorPonto: z.number().min(0).optional(),
   metaPontosMes: z.number().min(0).optional(),
   metaSlaStreak: z.number().min(0).max(100).optional(),
+  maxExecDays: z.number().int().min(0).max(365).optional(),
   executionStatuses: z.array(z.string().min(1).max(80)).max(50).optional(),
   taskClassification: z
     .object({

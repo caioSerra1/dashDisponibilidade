@@ -23,6 +23,7 @@ interface ConfigState {
   valorPorPonto: number;
   metaPontosMes: number;
   metaSlaStreak: number;
+  maxExecDays: number;
   executionStatuses: string[];
   taskClassification: TaskClassification;
 }
@@ -32,6 +33,7 @@ const DEFAULT: ConfigState = {
   valorPorPonto: 50,
   metaPontosMes: 40,
   metaSlaStreak: 99,
+  maxExecDays: 0,
   executionStatuses: ["em execução", "em andamento", "in progress"],
   taskClassification: {
     dev: { listIds: [], folderIds: [] },
@@ -112,6 +114,18 @@ export function ConfigView() {
               value={cfg.metaSlaStreak}
               onChange={(v) => setCfg({ ...cfg, metaSlaStreak: v })}
             />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Dias máximos em execução</Label>
+            <NumberField
+              value={cfg.maxExecDays}
+              onChange={(v) => setCfg({ ...cfg, maxExecDays: v })}
+              allowDecimals={false}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Tasks com mais de N dias em execução são excluídas de todas as métricas
+              (pontos, MTTR, contagem, ranking). 0 = sem filtro.
+            </p>
           </div>
         </CardContent>
       </Card>

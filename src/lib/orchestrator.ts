@@ -159,7 +159,7 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
       // Isso faz com que o cycle time seja calculado corretamente.
       tasks = await decorateWithExecutionStart(tasks, config.executionStatuses);
 
-      const metrics = computeTaskMetrics(tasks, now.getTime(), config.taskClassification);
+      const metrics = computeTaskMetrics(tasks, now.getTime(), config.taskClassification, config.maxExecDays);
       const pontos = metrics.pointsSum;
 
       // 2. Calcular variável (pontos = só DEV, suporte não pontua)
@@ -336,7 +336,7 @@ export async function runClose(target?: { year: number; month: number }): Promis
         continue;
       }
       tasks = await decorateWithExecutionStart(tasks, config.executionStatuses);
-      const metrics = computeTaskMetrics(tasks, to.getTime(), config.taskClassification);
+      const metrics = computeTaskMetrics(tasks, to.getTime(), config.taskClassification, config.maxExecDays);
       const pontos = metrics.pointsSum;
 
       const result = computePartial({

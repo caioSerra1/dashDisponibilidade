@@ -113,15 +113,24 @@ async function buildPayload(
     type: classify(t),
   }));
 
-  const resolutionValues = closed
+  // Excluir tasks com mais de N dias em execução das métricas (se configurado)
+  const maxExecMinutes = config.maxExecDays > 0 ? config.maxExecDays * 24 * 60 : 0;
+  const countedClosed = maxExecMinutes > 0
+    ? closed.filter((t) => {
+        if (t.cycleHours == null) return true;
+        return t.cycleHours * 60 <= maxExecMinutes;
+      })
+    : closed;
+
+  const resolutionValues = countedClosed
     .map((t) => t.resolutionHours)
     .filter((h): h is number => h != null);
 
-  const cycleValues = closed
+  const cycleValues = countedClosed
     .map((t) => t.cycleHours)
     .filter((h): h is number => h != null);
 
-  const pointsTotal = closed
+  const pointsTotal = countedClosed
     .filter((t) => t.type === "dev")
     .reduce((acc, t) => acc + (t.points ?? 0), 0);
 

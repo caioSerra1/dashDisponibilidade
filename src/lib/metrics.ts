@@ -205,12 +205,19 @@ export function computeTaskMetrics(
   tasks: readonly RichTask[],
   now: number = Date.now(),
   config: TaskClassificationConfig = EMPTY_CLASSIFICATION,
+  maxExecDays: number = 0,
 ): TaskMetrics {
+  const maxExecMinutes = maxExecDays > 0 ? maxExecDays * 24 * 60 : 0;
+
   const dev: RichTask[] = [];
   const support: RichTask[] = [];
   const ignored: RichTask[] = [];
 
   for (const task of tasks) {
+    // Excluir tasks com mais de N dias em execução de TODAS as métricas
+    if (maxExecMinutes > 0 && task.executionMinutes != null && task.executionMinutes > maxExecMinutes) {
+      continue;
+    }
     const type = classifyTask(task, config);
     if (type === "dev") dev.push(task);
     else if (type === "support") support.push(task);

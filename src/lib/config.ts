@@ -18,6 +18,11 @@ export interface AppConfig {
    * e não afetam a variável nem as métricas principais.
    */
   taskClassification: TaskClassificationConfig;
+  /**
+   * Dias máximos em execução. Tasks com mais tempo são excluídas de TODAS
+   * as métricas (pontos, MTTR, contagem, etc). 0 = sem filtro.
+   */
+  maxExecDays: number;
 }
 
 const DEFAULT_EXECUTION_STATUSES = [
@@ -42,6 +47,7 @@ const DEFAULTS: AppConfig = {
   metaSlaStreak: 99,
   executionStatuses: DEFAULT_EXECUTION_STATUSES,
   taskClassification: DEFAULT_TASK_CLASSIFICATION,
+  maxExecDays: 0,
 };
 
 export async function loadConfig(): Promise<AppConfig> {
@@ -83,6 +89,7 @@ export async function loadConfig(): Promise<AppConfig> {
     metaSlaStreak: num("metaSlaStreak"),
     executionStatuses,
     taskClassification,
+    maxExecDays: num("maxExecDays"),
   };
 }
 
