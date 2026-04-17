@@ -23,6 +23,7 @@ import {
   ListChecks,
   Bell,
   Megaphone,
+  Scale,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Brand } from "./brand";
@@ -62,6 +63,7 @@ const adminGroups: NavGroup[] = [
     label: "Equipe",
     items: [
       { href: "/mural", label: "Mural de performance", icon: Sparkles },
+      { href: "/admin/carga", label: "Carga do time", icon: Scale },
       { href: "/admin/users", label: "Usuários", icon: Users },
     ],
   },

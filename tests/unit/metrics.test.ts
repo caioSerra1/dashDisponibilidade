@@ -30,6 +30,7 @@ function task(overrides: Partial<RichTask>): RichTask {
     listId: DEV_LIST,
     folderId: null,
     returnedToExecution: 0,
+    executionMinutes: null,
     ...overrides,
   };
 }
@@ -101,16 +102,21 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
     expect(r.avgResolutionHours).toBe(15);
   });
 
-  it("avgCycleHours conta todas as prioridades (execução → fechamento)", () => {
+  it("avgCycleHours usa executionMinutes (só tempo em execução, exclui validação)", () => {
     const r = computeTaskMetrics(
       [
+        // Task com 120 min em execução (TIS) — mesmo que dateStarted→dateClosed seja 24h
+        task({ dateClosed: NOW, dateStarted: NOW - 24 * HOUR, dateCreated: NOW - 48 * HOUR, executionMinutes: 120 }),
+        // Task com 60 min
+        task({ dateClosed: NOW, dateStarted: NOW - 12 * HOUR, dateCreated: NOW - 24 * HOUR, executionMinutes: 60 }),
+        // Task sem TIS — usa fallback dateStarted→dateClosed (4h)
         task({ dateClosed: NOW, dateStarted: NOW - 4 * HOUR, dateCreated: NOW - 24 * HOUR }),
-        task({ dateClosed: NOW, dateStarted: null, dateCreated: NOW - 12 * HOUR }),
       ],
       NOW,
       CONFIG,
     );
-    expect(r.avgCycleHours).toBe(4);
+    // (120/60 + 60/60 + 4) / 3 = (2 + 1 + 4) / 3 = 2.33
+    expect(r.avgCycleHours).toBe(2.33);
   });
 
   it("priorityBreakdown agrega prioridades", () => {

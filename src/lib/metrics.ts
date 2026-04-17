@@ -15,6 +15,8 @@ export interface RichTask {
   folderId: string | null;
   /** Quantas vezes voltou pra um status de execução após sair. */
   returnedToExecution: number;
+  /** Minutos REAIS em status de execução (soma do TIS by_minute). Exclui validação. */
+  executionMinutes: number | null;
 }
 
 export type TaskType = "dev" | "support" | "ignored";
@@ -121,9 +123,14 @@ function computeSegment(tasks: readonly RichTask[], now: number): TypeMetrics {
     .map((t) => ((t.dateClosed as number) - (t.dateCreated as number)) / HOUR_MS)
     .filter((h) => h >= 0);
 
+  // Cycle time = tempo SOMENTE em execução (exclui validação, avaliação, etc).
+  // Usa executionMinutes do TIS quando disponível, senão fallback pra dateStarted→dateClosed.
   const cycleHours = closed
-    .filter((t) => typeof t.dateStarted === "number")
-    .map((t) => ((t.dateClosed as number) - (t.dateStarted as number)) / HOUR_MS)
+    .filter((t) => t.executionMinutes != null || typeof t.dateStarted === "number")
+    .map((t) => {
+      if (t.executionMinutes != null) return t.executionMinutes / 60;
+      return ((t.dateClosed as number) - (t.dateStarted as number)) / HOUR_MS;
+    })
     .filter((h) => h >= 0);
 
   // MTTA — só tasks com prioridade alta ou urgente.

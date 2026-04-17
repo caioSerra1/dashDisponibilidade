@@ -44,8 +44,8 @@ function toRich(task: ClickUpRawTask): RichTask {
     tags: (task.tags ?? []).map((t) => t.name),
     listId: task.list?.id ?? null,
     folderId: task.folder?.id ?? null,
-    // Populado depois, via time_in_status, em decorateWithExecutionStart.
     returnedToExecution: 0,
+    executionMinutes: null,
   };
 }
 
@@ -464,6 +464,30 @@ export function findExecutionStartMs(
     if (wanted.has(normalizeStatusName(entry.status))) return entry.sinceMs;
   }
   return null;
+}
+
+/**
+ * Soma os minutos que a task ficou em status de execução (total_time.by_minute).
+ * Diferente de `firstExecutionStart → dateClosed` que inclui tempo em validação.
+ * Retorna null se nenhum entry bate.
+ */
+export function computeExecutionMinutes(
+  history: readonly TimeInStatusEntry[],
+  current: TimeInStatusEntry | null,
+  executionStatuses: readonly string[],
+): number | null {
+  if (executionStatuses.length === 0) return null;
+  const wanted = new Set(executionStatuses.map(normalizeStatusName));
+  const all = current ? [...history, current] : [...history];
+  let totalMinutes = 0;
+  let found = false;
+  for (const entry of all) {
+    if (wanted.has(normalizeStatusName(entry.status))) {
+      totalMinutes += entry.totalMs / 60_000;
+      found = true;
+    }
+  }
+  return found ? Math.round(totalMinutes * 100) / 100 : null;
 }
 
 export function normalizeStatusName(s: string): string {

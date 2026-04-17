@@ -5,6 +5,7 @@ import {
   getClosedAndPendingTasks,
   getTimeInStatus,
   findExecutionStartMs,
+  computeExecutionMinutes,
   type AuditedTask,
 } from "@/lib/clickup";
 import { loadConfig } from "@/lib/config";
@@ -58,8 +59,10 @@ async function buildPayload(
 
   const now = Date.now();
 
-  // Buscar TIS em batches de 5 paralelos pra calcular cycle time real
-  const tisMap = new Map<string, number | null>();
+  // Buscar TIS em batches de 5 pra calcular tempo REAL em execução.
+  // Usa computeExecutionMinutes (soma de by_minute dos status de execução)
+  // em vez de firstExecStart→dateClosed (que inclui tempo em validação).
+  const tisMap = new Map<string, { execMinutes: number | null; execStartMs: number | null }>();
   for (let i = 0; i < closedInPeriod.length; i += TIS_BATCH_SIZE) {
     const batch = closedInPeriod.slice(i, i + TIS_BATCH_SIZE);
     const results = await Promise.all(
@@ -67,24 +70,28 @@ async function buildPayload(
         getTimeInStatus(t.id)
           .then((r) =>
             r.ok
-              ? findExecutionStartMs(r.history, r.current, config.executionStatuses)
-              : null,
+              ? {
+                  execMinutes: computeExecutionMinutes(r.history, r.current, config.executionStatuses),
+                  execStartMs: findExecutionStartMs(r.history, r.current, config.executionStatuses),
+                }
+              : { execMinutes: null, execStartMs: null },
           )
-          .catch(() => null),
+          .catch(() => ({ execMinutes: null, execStartMs: null })),
       ),
     );
-    batch.forEach((t, j) => tisMap.set(t.id, results[j] ?? null));
+    batch.forEach((t, j) => tisMap.set(t.id, results[j]!));
   }
 
   const closed: TaskRow[] = closedInPeriod.map((t) => {
-    const execStart = tisMap.get(t.id) ?? null;
+    const tis = tisMap.get(t.id);
     const resolutionHours =
       t.dateClosed != null && t.dateCreated != null
         ? Math.round(((t.dateClosed - t.dateCreated) / HOUR_MS) * 100) / 100
         : null;
+    // Cycle time = tempo SOMENTE em status de execução (exclui validação, avaliação, etc)
     const cycleHours =
-      t.dateClosed != null && execStart != null
-        ? Math.round(((t.dateClosed - execStart) / HOUR_MS) * 100) / 100
+      tis?.execMinutes != null
+        ? Math.round((tis.execMinutes / 60) * 100) / 100
         : null;
     return {
       ...t,

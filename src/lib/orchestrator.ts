@@ -6,6 +6,7 @@ import {
   getTimeInStatus,
   findExecutionStartMs,
   countReturnsToExecution,
+  computeExecutionMinutes,
 } from "./clickup";
 import { getAvailability, listHosts } from "./zabbix";
 import { computePartial } from "./calculate";
@@ -50,16 +51,21 @@ async function decorateWithExecutionStart(
     ),
   );
 
-  const decoratedById = new Map<string, { start: number | null; returns: number }>();
+  const decoratedById = new Map<string, {
+    start: number | null;
+    returns: number;
+    execMinutes: number | null;
+  }>();
   closed.forEach((t, i) => {
     const tis = tisResults[i]!;
     if (!tis.ok) {
-      decoratedById.set(t.id, { start: null, returns: 0 });
+      decoratedById.set(t.id, { start: null, returns: 0, execMinutes: null });
       return;
     }
     const start = findExecutionStartMs(tis.history, tis.current, executionStatuses);
     const returns = countReturnsToExecution(tis.history, tis.current, executionStatuses);
-    decoratedById.set(t.id, { start, returns });
+    const execMinutes = computeExecutionMinutes(tis.history, tis.current, executionStatuses);
+    decoratedById.set(t.id, { start, returns, execMinutes });
   });
 
   return tasks.map((t) => {
@@ -70,6 +76,7 @@ async function decorateWithExecutionStart(
       ...t,
       dateStarted: decorated.start ?? null,
       returnedToExecution: decorated.returns,
+      executionMinutes: decorated.execMinutes,
     };
   });
 }
