@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PeriodPicker } from "@/components/filters/period-picker";
+import { UserPicker } from "@/components/filters/user-picker";
 import { formatHours } from "@/lib/duration";
 import { formatDate } from "@/lib/date";
 
@@ -32,6 +33,7 @@ interface TaskRow {
   dateClosed: number | null;
   url: string;
   resolutionHours: number | null;
+  cycleHours: number | null;
   ageHours: number | null;
   type: TaskType;
 }
@@ -42,6 +44,7 @@ interface TasksData {
     total: number;
     pointsTotal: number;
     avgResolutionHours: number | null;
+    avgCycleHours: number | null;
     tasks: TaskRow[];
   };
   pending: {
@@ -71,7 +74,15 @@ type Tab = "closed" | "pending";
 type TypeFilter = "all" | "dev" | "support";
 type PriorityFilter = "all" | NonNullable<TaskRow["priority"]>;
 
-export function TasksView() {
+export function TasksView({
+  viewingUser,
+  isAdmin,
+  currentUserId,
+}: {
+  viewingUser?: { id: string; name: string };
+  isAdmin?: boolean;
+  currentUserId?: string;
+}) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<TasksData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,18 +153,35 @@ export function TasksView() {
 
   return (
     <div className="space-y-6 max-w-6xl">
+      {viewingUser && (
+        <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Visualização administrativa
+            </p>
+            <p className="text-sm mt-0.5">
+              Tasks de <strong>{viewingUser.name}</strong>
+            </p>
+          </div>
+          <a href="/tasks" className="text-xs text-primary hover:underline">
+            ← voltar pras minhas tasks
+          </a>
+        </div>
+      )}
+
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <ListChecks className="h-6 w-6 text-primary" />
-            Suas tasks no ClickUp
+            {viewingUser ? `Tasks — ${viewingUser.name}` : "Suas tasks no ClickUp"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Tudo o que está atribuído a você. Tempo de resolução é{" "}
+            Tudo o que está atribuído. Tempo de resolução é{" "}
             <em>fechada — criada</em>.
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && <UserPicker currentUserId={currentUserId} />}
           <PeriodPicker />
           <Button variant="outline" size="sm" onClick={() => load(true)} disabled={loading}>
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -178,9 +206,9 @@ export function TasksView() {
         />
         <Kpi
           icon={Clock}
-          title="Tempo médio de resolução"
-          value={formatHours(data.closed.avgResolutionHours)}
-          helper="criação → fechamento"
+          title="Tempo médio em execução"
+          value={formatHours(data.closed.avgCycleHours ?? data.closed.avgResolutionHours)}
+          helper={data.closed.avgCycleHours != null ? "execução → fechamento" : "criação → fechamento (sem TIS)"}
         />
         <Kpi
           icon={Hourglass}
@@ -324,7 +352,13 @@ function TaskRowCard({ task, mode }: { task: TaskRow; mode: Tab }) {
           {mode === "pending" && task.dateCreated != null && (
             <span>aberta em {formatDate(new Date(task.dateCreated))}</span>
           )}
-          {mode === "closed" && task.resolutionHours != null && (
+          {mode === "closed" && task.cycleHours != null && (
+            <span className="inline-flex items-center gap-1 text-success">
+              <Clock className="h-3 w-3" />
+              em execução por {formatHours(task.cycleHours)}
+            </span>
+          )}
+          {mode === "closed" && task.cycleHours == null && task.resolutionHours != null && (
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3 w-3" />
               criada → fechada: {formatHours(task.resolutionHours)}

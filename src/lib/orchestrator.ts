@@ -143,7 +143,8 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
       try {
         tasks = await getTasksForUser(user.clickupUserId, from, now);
       } catch (e) {
-        console.error("[clickup] getTasksForUser falhou", e);
+        console.error(`[daily] ClickUp falhou pra ${user.name}, pulando`, e);
+        continue;
       }
 
       // Decora cada task fechada com o real `dateStarted` derivado do
@@ -323,8 +324,9 @@ export async function runClose(target?: { year: number; month: number }): Promis
       let tasks: RichTask[] = [];
       try {
         tasks = await getTasksForUser(user.clickupUserId, from, to);
-      } catch {
-        // ignore
+      } catch (e) {
+        console.error(`[close] ClickUp falhou pra ${user.name}, pulando`, e);
+        continue;
       }
       tasks = await decorateWithExecutionStart(tasks, config.executionStatuses);
       const metrics = computeTaskMetrics(tasks, to.getTime(), config.taskClassification);

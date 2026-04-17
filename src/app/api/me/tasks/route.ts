@@ -1,7 +1,12 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { getClosedAndPendingTasks, type AuditedTask } from "@/lib/clickup";
+import {
+  getClosedAndPendingTasks,
+  getTimeInStatus,
+  findExecutionStartMs,
+  type AuditedTask,
+} from "@/lib/clickup";
 import { loadConfig } from "@/lib/config";
 import { parsePeriodFromSearchParams } from "@/lib/date";
 import { classifyTask, type TaskType } from "@/lib/metrics";
@@ -11,9 +16,11 @@ export const runtime = "nodejs";
 
 const HOUR_MS = 3600_000;
 const CACHE_TTL_MS = 15 * 60 * 1000;
+const TIS_BATCH_SIZE = 5;
 
 interface TaskRow extends AuditedTask {
   resolutionHours: number | null;
+  cycleHours: number | null;
   ageHours: number | null;
   type: TaskType;
 }
@@ -51,19 +58,47 @@ async function buildPayload(
 
   const now = Date.now();
 
-  const closed: TaskRow[] = closedInPeriod.map((t) => ({
-    ...t,
-    resolutionHours:
+  // Buscar TIS em batches de 5 paralelos pra calcular cycle time real
+  const tisMap = new Map<string, number | null>();
+  for (let i = 0; i < closedInPeriod.length; i += TIS_BATCH_SIZE) {
+    const batch = closedInPeriod.slice(i, i + TIS_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map((t) =>
+        getTimeInStatus(t.id)
+          .then((r) =>
+            r.ok
+              ? findExecutionStartMs(r.history, r.current, config.executionStatuses)
+              : null,
+          )
+          .catch(() => null),
+      ),
+    );
+    batch.forEach((t, j) => tisMap.set(t.id, results[j] ?? null));
+  }
+
+  const closed: TaskRow[] = closedInPeriod.map((t) => {
+    const execStart = tisMap.get(t.id) ?? null;
+    const resolutionHours =
       t.dateClosed != null && t.dateCreated != null
         ? Math.round(((t.dateClosed - t.dateCreated) / HOUR_MS) * 100) / 100
-        : null,
-    ageHours: null,
-    type: classify(t),
-  }));
+        : null;
+    const cycleHours =
+      t.dateClosed != null && execStart != null
+        ? Math.round(((t.dateClosed - execStart) / HOUR_MS) * 100) / 100
+        : null;
+    return {
+      ...t,
+      resolutionHours,
+      cycleHours,
+      ageHours: null,
+      type: classify(t),
+    };
+  });
 
   const pendingRows: TaskRow[] = pending.map((t) => ({
     ...t,
     resolutionHours: null,
+    cycleHours: null,
     ageHours:
       t.dateCreated != null
         ? Math.round(((now - t.dateCreated) / HOUR_MS) * 100) / 100
@@ -73,6 +108,10 @@ async function buildPayload(
 
   const resolutionValues = closed
     .map((t) => t.resolutionHours)
+    .filter((h): h is number => h != null);
+
+  const cycleValues = closed
+    .map((t) => t.cycleHours)
     .filter((h): h is number => h != null);
 
   const pointsTotal = closed
@@ -86,6 +125,7 @@ async function buildPayload(
       total: closed.length,
       pointsTotal,
       avgResolutionHours: avg(resolutionValues),
+      avgCycleHours: avg(cycleValues),
       tasks: closed,
     },
     pending: {
@@ -102,8 +142,19 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
+  const url = new URL(req.url);
+  const targetUserId = url.searchParams.get("userId");
+
+  let lookupId = session.user.id;
+  if (targetUserId && targetUserId !== session.user.id) {
+    if (session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    lookupId = targetUserId;
+  }
+
   const user = await prisma.user.findUnique({
-    where: { id: session.user.id },
+    where: { id: lookupId },
     select: { clickupUserId: true },
   });
   if (!user?.clickupUserId) {
@@ -114,7 +165,6 @@ export async function GET(req: Request) {
     });
   }
 
-  const url = new URL(req.url);
   const periodo = parsePeriodFromSearchParams(url.searchParams);
   const periodKey = `${periodo.mode}:${periodo.from.toISOString()}:${periodo.to.toISOString()}`;
   const key = `${user.clickupUserId}:${periodKey}`;

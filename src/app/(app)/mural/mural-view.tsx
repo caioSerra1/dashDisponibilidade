@@ -123,6 +123,32 @@ export function MuralView() {
     }
   }
 
+  async function handleRecalcMonth() {
+    if (!data) return;
+    const de = new Date(data.periodo.de);
+    const year = de.getUTCFullYear();
+    const month = de.getUTCMonth() + 1;
+    setSyncing(true);
+    try {
+      await fetch(`/api/admin/sync?kind=close&year=${year}&month=${month}`, { method: "POST" });
+      loadData();
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  const isPastMonth = data
+    ? (() => {
+        const now = new Date();
+        const de = new Date(data.periodo.de);
+        return (
+          de.getUTCFullYear() < now.getUTCFullYear() ||
+          (de.getUTCFullYear() === now.getUTCFullYear() &&
+            de.getUTCMonth() < now.getUTCMonth())
+        );
+      })()
+    : false;
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto w-full">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -150,6 +176,16 @@ export function MuralView() {
             <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "Sincronizando…" : "Sincronizar"}
           </button>
+          {isPastMonth && (
+            <button
+              type="button"
+              onClick={handleRecalcMonth}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 rounded-md border border-primary/40 bg-primary/5 px-3 py-2 text-sm font-medium text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
+            >
+              Recalcular mês
+            </button>
+          )}
           <PeriodPicker />
         </div>
       </div>

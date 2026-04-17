@@ -7,6 +7,9 @@ import {
   computeEvolution,
   detectAnomaly,
 } from "@/lib/team-metrics";
+import { getTasksForUser } from "@/lib/clickup";
+import { computeTaskMetrics } from "@/lib/metrics";
+import { loadConfig as loadConfigForFallback } from "@/lib/config";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,7 +35,7 @@ export async function GET(request: Request) {
 
   const users = await prisma.user.findMany({
     where: { active: true, showInMural: true, clickupUserId: { not: null } },
-    select: { id: true, name: true, email: true },
+    select: { id: true, name: true, email: true, clickupUserId: true },
   });
 
   const memberResults = await Promise.all(
@@ -83,35 +86,65 @@ export async function GET(request: Request) {
 
       const latestSnap = snapshotsInPeriod.at(-1);
 
-      // Fallback pra snapshots pré-reforma
-      const segmentedTotal =
-        (latestMetric?.tasksClosedMonthDev ?? 0) +
-        (latestMetric?.tasksClosedMonthSupport ?? 0);
-      const hasSegmentedData =
-        segmentedTotal > 0 || (latestMetric?.pointsMonthDev ?? 0) > 0;
-      const legacyTotalTasks = latestMetric?.tasksClosedMonth ?? 0;
-      const usePreReformaFallback = !hasSegmentedData && legacyTotalTasks > 0;
-
-      const pontosDev = usePreReformaFallback
-        ? latestMetric?.pointsMonth ?? 0
-        : latestMetric?.pointsMonthDev ?? monthlyClose?.pontos ?? 0;
-      const tasksDev = usePreReformaFallback
-        ? legacyTotalTasks
-        : latestMetric?.tasksClosedMonthDev ?? 0;
-      const tasksSuporte = usePreReformaFallback
-        ? 0
-        : latestMetric?.tasksClosedMonthSupport ?? 0;
-      const slaAvg = latestSnap?.slaMedioMes ?? monthlyClose?.slaFinal ?? 0;
-      const mttrHoras = usePreReformaFallback
-        ? latestMetric?.avgResolutionHoursMonth ?? null
-        : latestMetric?.avgResolutionHoursDev ?? null;
-      const mttaHoras = latestMetric?.avgAckHoursSupport ?? null;
-      const retornosExecucao = latestMetric?.returnedCountMonth ?? 0;
-      const valorPontos = latestSnap?.valorPontos ?? monthlyClose?.valorPontos ?? 0;
-      const valorDisponibilidade =
+      let pontosDev = 0;
+      let tasksDev = 0;
+      let tasksSuporte = 0;
+      let slaAvg = latestSnap?.slaMedioMes ?? monthlyClose?.slaFinal ?? 0;
+      let mttrHoras: number | null = null;
+      let mttaHoras: number | null = null;
+      let retornosExecucao = 0;
+      let valorPontos = latestSnap?.valorPontos ?? monthlyClose?.valorPontos ?? 0;
+      let valorDisponibilidade =
         latestSnap?.valorDisponibilidade ?? monthlyClose?.valorDisponibilidade ?? 0;
-      const valorParcial = latestSnap?.valorParcial ?? monthlyClose?.valorTotal ?? 0;
+      let valorParcial = latestSnap?.valorParcial ?? monthlyClose?.valorTotal ?? 0;
       const valorIsClosed = !latestSnap && monthlyClose != null;
+
+      const hasAnyDbData = latestMetric != null || latestSnap != null || monthlyClose != null;
+
+      if (latestMetric) {
+        const segmentedTotal =
+          (latestMetric.tasksClosedMonthDev ?? 0) +
+          (latestMetric.tasksClosedMonthSupport ?? 0);
+        const hasSegmentedData =
+          segmentedTotal > 0 || (latestMetric.pointsMonthDev ?? 0) > 0;
+        const usePreReformaFallback = !hasSegmentedData && latestMetric.tasksClosedMonth > 0;
+
+        pontosDev = usePreReformaFallback
+          ? latestMetric.pointsMonth
+          : latestMetric.pointsMonthDev;
+        tasksDev = usePreReformaFallback
+          ? latestMetric.tasksClosedMonth
+          : latestMetric.tasksClosedMonthDev;
+        tasksSuporte = usePreReformaFallback ? 0 : latestMetric.tasksClosedMonthSupport;
+        mttrHoras = usePreReformaFallback
+          ? latestMetric.avgResolutionHoursMonth
+          : latestMetric.avgResolutionHoursDev;
+        mttaHoras = latestMetric.avgAckHoursSupport;
+        retornosExecucao = latestMetric.returnedCountMonth;
+      } else if (monthlyClose) {
+        pontosDev = monthlyClose.pontos;
+      }
+
+      // Fallback live: se NÃO tem dados no DB pra esse user+período, busca
+      // do ClickUp direto. Lento (~2s) mas garante dados em meses antigos.
+      if (!hasAnyDbData && u.clickupUserId) {
+        try {
+          const fallbackConfig = await loadConfigForFallback();
+          const tasks = await getTasksForUser(u.clickupUserId, from, to);
+          const metrics = computeTaskMetrics(tasks, to.getTime(), fallbackConfig.taskClassification);
+          pontosDev = metrics.pointsSum;
+          tasksDev = metrics.byType.dev.tasksClosed;
+          tasksSuporte = metrics.byType.support.tasksClosed;
+          mttrHoras = metrics.byType.dev.avgResolutionHours;
+          mttaHoras = metrics.byType.support.avgAckHours;
+          retornosExecucao = metrics.returnedToExecution;
+          valorPontos = pontosDev * fallbackConfig.valorPorPonto;
+          valorDisponibilidade = fallbackConfig.valorDisponibilidade100;
+          valorParcial = valorPontos + valorDisponibilidade;
+        } catch {
+          // ClickUp falhou — fica com zeros
+        }
+      }
 
       const metasBatidas = goalHitsCurrent.filter(
         (h) => h.goal.category === "METRIC",

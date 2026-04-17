@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { runDaily, syncZabbixHosts } from "@/lib/orchestrator";
+import { runDaily, runClose, syncZabbixHosts } from "@/lib/orchestrator";
 
 export const runtime = "nodejs";
 
@@ -14,6 +14,15 @@ export async function POST(request: Request) {
   try {
     if (kind === "hosts") {
       const r = await syncZabbixHosts();
+      return NextResponse.json({ ok: true, ...r });
+    }
+    if (kind === "close") {
+      const year = Number(url.searchParams.get("year"));
+      const month = Number(url.searchParams.get("month"));
+      if (!year || !month || month < 1 || month > 12) {
+        return NextResponse.json({ error: "year e month obrigatórios" }, { status: 400 });
+      }
+      const r = await runClose({ year, month });
       return NextResponse.json({ ok: true, ...r });
     }
     const r = await runDaily();
