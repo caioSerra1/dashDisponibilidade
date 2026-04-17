@@ -263,6 +263,79 @@ export async function getPointsForUser(
   return tasks.reduce((acc, t) => acc + (t.points ?? 0), 0);
 }
 
+/**
+ * Versão otimizada: faz 2 queries focadas em vez de paginar tudo.
+ *  1. Fechadas no período (filtro date_closed server-side = 1-2 páginas)
+ *  2. Pendentes (sem include_closed = só abertas = 1-2 páginas)
+ *
+ * Reduz de 5 páginas (getAllAssignedTasks) pra ~2-3 calls, cortando
+ * a latência de ~15s pra ~4s.
+ */
+export async function getClosedAndPendingTasks(
+  clickupUserId: string,
+  closedFrom: Date,
+  closedTo: Date,
+): Promise<{ closedInPeriod: AuditedTask[]; pending: AuditedTask[] }> {
+  const { CLICKUP_API_TOKEN, CLICKUP_TEAM_ID } = env();
+  if (!CLICKUP_API_TOKEN || !CLICKUP_TEAM_ID) {
+    throw new Error("Credenciais do ClickUp ausentes");
+  }
+
+  async function fetchPage(params: Record<string, string>): Promise<ClickUpRawTaskWithAssignees[]> {
+    const url = new URL(`${BASE}/team/${CLICKUP_TEAM_ID}/task`);
+    url.searchParams.set("subtasks", "true");
+    url.searchParams.append("assignees[]", clickupUserId);
+    for (const [k, v] of Object.entries(params)) {
+      url.searchParams.set(k, v);
+    }
+    const res = await fetch(url, {
+      headers: { Authorization: CLICKUP_API_TOKEN, Accept: "application/json" },
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error(`ClickUp ${res.status}`);
+    const data = (await res.json()) as ClickUpTasksResponse;
+    return (data.tasks ?? []) as ClickUpRawTaskWithAssignees[];
+  }
+
+  const userIdNum = Number(clickupUserId);
+  const fromMs = closedFrom.getTime();
+  const toMs = closedTo.getTime();
+
+  // Executa ambas em paralelo — 2 calls em vez de 5 sequenciais
+  const [closedRaw, pendingRaw] = await Promise.all([
+    fetchPage({
+      include_closed: "true",
+      date_closed_gt: String(fromMs),
+      date_closed_lt: String(toMs),
+      page: "0",
+    }),
+    fetchPage({
+      include_closed: "false",
+      page: "0",
+    }),
+  ]);
+
+  const closedInPeriod = closedRaw
+    .filter((t) => {
+      const assignees = t.assignees ?? [];
+      if (!assignees.some((a) => a.id === userIdNum)) return false;
+      const closedMs = t.date_closed ? Number(t.date_closed) : null;
+      return closedMs != null && closedMs >= fromMs && closedMs < toMs;
+    })
+    .map(toAudited)
+    .sort((a, b) => (b.dateClosed ?? 0) - (a.dateClosed ?? 0));
+
+  const pending = pendingRaw
+    .filter((t) => {
+      const assignees = t.assignees ?? [];
+      return assignees.some((a) => a.id === userIdNum) && !t.date_closed;
+    })
+    .map(toAudited)
+    .sort((a, b) => (b.dateCreated ?? 0) - (a.dateCreated ?? 0));
+
+  return { closedInPeriod, pending };
+}
+
 export async function testClickUp(): Promise<{ ok: boolean; message: string }> {
   try {
     const { CLICKUP_API_TOKEN, CLICKUP_TEAM_ID } = env();

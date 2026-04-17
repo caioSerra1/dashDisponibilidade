@@ -32,23 +32,16 @@ interface TaskRow {
   dateClosed: number | null;
   url: string;
   resolutionHours: number | null;
-  cycleHours: number | null;
-  passedExecution: boolean;
   ageHours: number | null;
   type: TaskType;
 }
 
 interface TasksData {
   period: { from: string; to: string };
-  executionStatuses: string[];
-  tis: { enabled: boolean | null; message?: string };
   closed: {
     total: number;
     pointsTotal: number;
-    avgCycleHours: number | null;
     avgResolutionHours: number | null;
-    countedForCycle: number;
-    skippedNoExecution: number;
     tasks: TaskRow[];
   };
   pending: {
@@ -169,21 +162,6 @@ export function TasksView() {
         </div>
       </div>
 
-      {/* Aviso TIS */}
-      {data.tis.enabled === false && data.tis.message && (
-        <Card className="border-amber-300/40 bg-amber-50/40 dark:bg-amber-900/10">
-          <CardContent className="p-4 flex items-start gap-3 text-sm">
-            <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium">
-                Tempo em execução não disponível — usando criação → fechamento
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">{data.tis.message}</p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
       {/* KPIs */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Kpi
@@ -200,13 +178,9 @@ export function TasksView() {
         />
         <Kpi
           icon={Clock}
-          title="Tempo médio em execução"
-          value={formatHours(data.closed.avgCycleHours ?? data.closed.avgResolutionHours)}
-          helper={
-            data.closed.avgCycleHours != null
-              ? `${data.closed.countedForCycle} task(s) consideradas${data.closed.skippedNoExecution > 0 ? ` · ${data.closed.skippedNoExecution} ignoradas` : ""}`
-              : "fallback: criação → fechamento"
-          }
+          title="Tempo médio de resolução"
+          value={formatHours(data.closed.avgResolutionHours)}
+          helper="criação → fechamento"
         />
         <Kpi
           icon={Hourglass}
@@ -350,22 +324,11 @@ function TaskRowCard({ task, mode }: { task: TaskRow; mode: Tab }) {
           {mode === "pending" && task.dateCreated != null && (
             <span>aberta em {formatDate(new Date(task.dateCreated))}</span>
           )}
-          {mode === "closed" && task.cycleHours != null && (
-            <span className="inline-flex items-center gap-1 text-success">
-              <Clock className="h-3 w-3" />
-              em execução por {formatHours(task.cycleHours)}
-            </span>
-          )}
-          {mode === "closed" && task.cycleHours == null && task.resolutionHours != null && (
+          {mode === "closed" && task.resolutionHours != null && (
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3 w-3" />
               criada → fechada: {formatHours(task.resolutionHours)}
             </span>
-          )}
-          {mode === "closed" && !task.passedExecution && (
-            <Badge variant="outline" className="text-[10px] border-amber-400/50 text-amber-700">
-              não passou por execução
-            </Badge>
           )}
           {mode === "pending" && task.ageHours != null && (
             <span className="inline-flex items-center gap-1">
