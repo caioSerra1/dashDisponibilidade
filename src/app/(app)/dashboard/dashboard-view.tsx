@@ -27,6 +27,7 @@ import { formatDate, formatMonth } from "@/lib/date";
 import { formatHours } from "@/lib/duration";
 import { StreakBadge } from "@/components/game/streak-badge";
 import { PeriodPicker } from "@/components/filters/period-picker";
+import { UserPicker } from "@/components/filters/user-picker";
 
 interface SuporteData {
   tasksClosed: number;
@@ -76,8 +77,12 @@ function plural(n: number, singular: string, plural: string): string {
 
 export function DashboardView({
   viewingUser,
+  isAdmin,
+  currentUserId,
 }: {
   viewingUser?: { id: string; name: string };
+  isAdmin?: boolean;
+  currentUserId?: string;
 }) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<DashboardData | null>(null);
@@ -125,7 +130,8 @@ export function DashboardView({
         </div>
       )}
 
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {isAdmin && <UserPicker currentUserId={currentUserId} />}
         <PeriodPicker />
       </div>
 

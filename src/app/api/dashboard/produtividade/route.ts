@@ -10,8 +10,16 @@ export async function GET(request: Request) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const userId = session.user.id;
   const url = new URL(request.url);
+  const targetUserId = url.searchParams.get("userId");
+
+  let userId = session.user.id;
+  if (targetUserId && targetUserId !== session.user.id) {
+    if (session.user.role !== "ADMIN") {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+    userId = targetUserId;
+  }
   const periodo = parsePeriodFromSearchParams(url.searchParams);
   const { from, to } = periodo;
 

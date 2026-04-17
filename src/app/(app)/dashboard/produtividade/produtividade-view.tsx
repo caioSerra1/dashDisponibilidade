@@ -16,6 +16,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PeriodPicker } from "@/components/filters/period-picker";
+import { UserPicker } from "@/components/filters/user-picker";
 import { MetricLabel } from "@/components/ui/metric-label";
 import { TeamHeatmap } from "@/components/admin/team-heatmap";
 import { computeHeatmap } from "@/lib/team-metrics";
@@ -68,7 +69,15 @@ interface ProdData {
 
 type TypeFilter = "all" | "dev" | "support";
 
-export function ProdutividadeView() {
+export function ProdutividadeView({
+  viewingUser,
+  isAdmin,
+  currentUserId,
+}: {
+  viewingUser?: { id: string; name: string };
+  isAdmin?: boolean;
+  currentUserId?: string;
+}) {
   const searchParams = useSearchParams();
   const [data, setData] = useState<ProdData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -132,17 +141,36 @@ export function ProdutividadeView() {
 
   return (
     <div className="space-y-6 max-w-7xl">
+      {viewingUser && (
+        <div className="flex items-center justify-between rounded-md border border-primary/40 bg-primary/5 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+              Visualização administrativa
+            </p>
+            <p className="text-sm mt-0.5">
+              Produtividade de <strong>{viewingUser.name}</strong>
+            </p>
+          </div>
+          <a href="/dashboard/produtividade" className="text-xs text-primary hover:underline">
+            ← voltar pro meu painel
+          </a>
+        </div>
+      )}
+
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h2 className="text-2xl font-bold flex items-center gap-2">
             <Activity className="h-6 w-6 text-primary" />
-            Minha produtividade
+            {viewingUser ? `Produtividade — ${viewingUser.name}` : "Minha produtividade"}
           </h2>
           <p className="text-sm text-muted-foreground">
-            Métricas reais derivadas das suas tasks no ClickUp — {data.periodo.label}.
+            Métricas reais derivadas das tasks no ClickUp — {data.periodo.label}.
           </p>
         </div>
-        <PeriodPicker />
+        <div className="flex items-center gap-2">
+          {isAdmin && <UserPicker currentUserId={currentUserId} />}
+          <PeriodPicker />
+        </div>
       </div>
 
       {/* Toggle tipo */}

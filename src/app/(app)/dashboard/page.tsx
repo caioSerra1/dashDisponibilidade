@@ -12,17 +12,28 @@ export default async function DashboardPage({
   if (!session?.user) redirect("/login");
 
   const { userId } = await searchParams;
+  const isAdmin = session.user.role === "ADMIN";
 
-  // Admin pode ver dashboard de outro colaborador via ?userId=
   if (userId && userId !== session.user.id) {
-    if (session.user.role !== "ADMIN") redirect("/dashboard");
+    if (!isAdmin) redirect("/dashboard");
     const target = await prisma.user.findUnique({
       where: { id: userId },
       select: { id: true, name: true },
     });
     if (!target) redirect("/mural");
-    return <DashboardView viewingUser={{ id: target.id, name: target.name }} />;
+    return (
+      <DashboardView
+        viewingUser={{ id: target.id, name: target.name }}
+        isAdmin={isAdmin}
+        currentUserId={session.user.id}
+      />
+    );
   }
 
-  return <DashboardView />;
+  return (
+    <DashboardView
+      isAdmin={isAdmin}
+      currentUserId={session.user.id}
+    />
+  );
 }

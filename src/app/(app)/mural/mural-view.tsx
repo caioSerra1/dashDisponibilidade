@@ -18,10 +18,8 @@ import { Button } from "@/components/ui/button";
 import { MetricLabel } from "@/components/ui/metric-label";
 import { PeriodPicker } from "@/components/filters/period-picker";
 import { TeamHeatmap } from "@/components/admin/team-heatmap";
-import { BacklogAgingChart } from "@/components/admin/backlog-aging-chart";
 import { OneOnOneModal } from "@/components/admin/one-on-one-modal";
 import { formatBRL } from "@/lib/money";
-import type { BacklogAging } from "@/lib/team-metrics";
 
 interface MemberCard {
   userId: string;
@@ -33,7 +31,6 @@ interface MemberCard {
   mttrHoras: number | null;
   mttaHoras: number | null;
   wipAtual: number;
-  backlogAging: BacklogAging;
   retornosExecucao: number;
   metasBatidas: number;
   marcosBatidos: number;
@@ -65,7 +62,6 @@ interface MuralPayload {
     throughputPorSemana: number;
     retornosExecucao: number;
     equidade: { score: number; label: string };
-    backlogAging: BacklogAging;
     valorTotal: number;
     valorTotalPontos: number;
     valorTotalDisponibilidade: number;
@@ -164,44 +160,30 @@ export function MuralView() {
         <>
           <TeamKpis kpis={data.kpisEquipe} />
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <Card className="lg:col-span-2">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <TrendingUp className="h-4 w-4 text-primary" />
-                  Heatmap de atividade
-                </CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Tasks fechadas por dia da semana × hora do dia
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                Heatmap de atividade
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Tasks fechadas por dia da semana × hora do dia
+              </p>
+            </CardHeader>
+            <CardContent>
+              {heatmapLoading ? (
+                <div className="h-48 animate-pulse bg-muted/40 rounded-md flex items-center justify-center">
+                  <p className="text-xs text-muted-foreground">Carregando heatmap do ClickUp…</p>
+                </div>
+              ) : heatmapGrid ? (
+                <TeamHeatmap grid={heatmapGrid} />
+              ) : (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  Sem dados de tasks fechadas no período.
                 </p>
-              </CardHeader>
-              <CardContent>
-                {heatmapLoading ? (
-                  <div className="h-48 animate-pulse bg-muted/40 rounded-md flex items-center justify-center">
-                    <p className="text-xs text-muted-foreground">Carregando heatmap do ClickUp…</p>
-                  </div>
-                ) : heatmapGrid ? (
-                  <TeamHeatmap grid={heatmapGrid} />
-                ) : (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    Sem dados de tasks fechadas no período.
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Backlog aberto</CardTitle>
-                <p className="text-xs text-muted-foreground">
-                  Distribuição por idade (dias)
-                </p>
-              </CardHeader>
-              <CardContent>
-                <BacklogAgingChart data={data.kpisEquipe.backlogAging} />
-              </CardContent>
-            </Card>
-          </div>
+              )}
+            </CardContent>
+          </Card>
 
           {data.destaqueEvolucao && <DestaqueEvolucao destaque={data.destaqueEvolucao} />}
 
