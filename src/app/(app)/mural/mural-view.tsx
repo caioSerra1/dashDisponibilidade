@@ -347,10 +347,10 @@ function MemberCardBlock({
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="grid grid-cols-4 gap-2 text-center">
-          <MiniStat label="Pontos dev" value={String(member.pontosDev)} />
+          <MiniStat label="Var. dev" value={formatBRL(member.valorPontos)} />
+          <MiniStat label="Var. disponibilidade" value={formatBRL(member.valorDisponibilidade)} />
           <MiniStat label="Tasks dev" value={String(member.tasksDev)} />
-          <MiniStat label="Suporte" value={String(member.tasksSuporte)} />
-          <MiniStat label="SLA" value={`${member.slaAvg.toFixed(0)}%`} />
+          <MiniStat label="Tasks suporte" value={String(member.tasksSuporte)} />
         </div>
         <div className="grid grid-cols-4 gap-2 text-center">
           <MiniStat
@@ -361,7 +361,7 @@ function MemberCardBlock({
             label="MTTA"
             value={member.mttaHoras != null ? `${member.mttaHoras.toFixed(0)}h` : "—"}
           />
-          <MiniStat label="WIP" value={String(member.wipAtual)} />
+          <MiniStat label="SLA" value={`${member.slaAvg.toFixed(1)}%`} />
           <MiniStat label="Retornos" value={String(member.retornosExecucao)} />
         </div>
 

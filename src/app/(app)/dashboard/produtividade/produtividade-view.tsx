@@ -17,12 +17,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PeriodPicker } from "@/components/filters/period-picker";
 import { MetricLabel } from "@/components/ui/metric-label";
+import { TeamHeatmap } from "@/components/admin/team-heatmap";
+import { computeHeatmap } from "@/lib/team-metrics";
 import { formatHours } from "@/lib/duration";
 
-const TasksBarChart = dynamic(
-  () => import("@/components/charts/tasks-bar").then((m) => m.TasksBarChart),
-  { ssr: false, loading: () => <div className="h-64 animate-pulse bg-muted/40 rounded-md" /> },
-);
 const ResolutionLineChart = dynamic(
   () => import("@/components/charts/resolution-line").then((m) => m.ResolutionLineChart),
   { ssr: false, loading: () => <div className="h-56 animate-pulse bg-muted/40 rounded-md" /> },
@@ -75,15 +73,25 @@ export function ProdutividadeView() {
   const [data, setData] = useState<ProdData | null>(null);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  const [heatmapGrid, setHeatmapGrid] = useState<number[][] | null>(null);
 
   const query = useMemo(() => searchParams.toString(), [searchParams]);
 
   useEffect(() => {
     setLoading(true);
-    fetch(`/api/dashboard/produtividade?${query}`)
-      .then((r) => r.json())
-      .then((d: ProdData) => setData(d))
-      .finally(() => setLoading(false));
+    Promise.all([
+      fetch(`/api/dashboard/produtividade?${query}`).then((r) => r.json()),
+      fetch(`/api/me/tasks?${query}`).then((r) => r.json()).catch(() => null),
+    ]).then(([prodData, tasksData]) => {
+      setData(prodData as ProdData);
+      if (tasksData?.closed?.tasks) {
+        const closedDates = (tasksData.closed.tasks as Array<{ dateClosed: number | null }>)
+          .filter((t) => t.dateClosed != null);
+        setHeatmapGrid(computeHeatmap(closedDates));
+      } else {
+        setHeatmapGrid(null);
+      }
+    }).finally(() => setLoading(false));
   }, [query]);
 
   if (loading) return <p className="text-muted-foreground">Carregando…</p>;
@@ -224,16 +232,25 @@ export function ProdutividadeView() {
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Throughput */}
+        {/* Heatmap individual */}
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" />
-              Tasks fechadas por dia (acumulado do período)
+              Quando você fecha tasks
             </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Distribuição por dia da semana × hora do dia
+            </p>
           </CardHeader>
           <CardContent>
-            <TasksBarChart data={data.series} />
+            {heatmapGrid ? (
+              <TeamHeatmap grid={heatmapGrid} />
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Sem dados de tasks fechadas no período.
+              </p>
+            )}
           </CardContent>
         </Card>
 
