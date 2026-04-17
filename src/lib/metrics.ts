@@ -25,14 +25,20 @@ export interface TaskClassificationConfig {
 }
 
 /**
- * Classifica uma task em `dev`, `support` ou `ignored` a partir do mapeamento
- * de listas/pastas do ClickUp no admin/config. Precedência: suporte > dev
- * (se uma lista aparece nos dois, suporte ganha — evita pontuação indevida).
+ * Classifica uma task em `dev`, `support` ou `ignored`.
+ *
+ * Regra: task com pontos > 0 é SEMPRE dev — independente de estar na lista
+ * de suporte. Isso captura trabalho técnico que entra pelo formulário de
+ * suporte mas recebe story points (o time reconhece o esforço dando pontos).
+ *
+ * Sem pontos, usa o mapeamento de listas/pastas do admin/config.
  */
 export function classifyTask(
-  task: Pick<RichTask, "listId" | "folderId">,
+  task: Pick<RichTask, "listId" | "folderId" | "points">,
   config: TaskClassificationConfig,
 ): TaskType {
+  if (task.points != null && task.points > 0) return "dev";
+
   const listId = task.listId;
   const folderId = task.folderId;
 

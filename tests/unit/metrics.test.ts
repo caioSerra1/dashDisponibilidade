@@ -36,28 +36,30 @@ function task(overrides: Partial<RichTask>): RichTask {
 
 describe("classifyTask", () => {
   it("classifica como support se list_id bate em support.listIds", () => {
-    expect(classifyTask({ listId: SUPPORT_LIST, folderId: null }, CONFIG)).toBe("support");
+    expect(classifyTask({ listId: SUPPORT_LIST, folderId: null, points: null }, CONFIG)).toBe("support");
   });
 
   it("classifica como dev se list_id bate em dev.listIds", () => {
-    expect(classifyTask({ listId: DEV_LIST, folderId: null }, CONFIG)).toBe("dev");
+    expect(classifyTask({ listId: DEV_LIST, folderId: null, points: null }, CONFIG)).toBe("dev");
   });
 
   it("classifica como dev se folder_id bate em dev.folderIds (ex.: Sprints Semanais)", () => {
-    expect(classifyTask({ listId: "outra-lista", folderId: SPRINTS_FOLDER }, CONFIG)).toBe("dev");
+    expect(classifyTask({ listId: "outra-lista", folderId: SPRINTS_FOLDER, points: null }, CONFIG)).toBe("dev");
   });
 
   it("classifica como ignored quando nada bate", () => {
-    expect(classifyTask({ listId: "qualquer-outro", folderId: null }, CONFIG)).toBe("ignored");
-    expect(classifyTask({ listId: null, folderId: null }, CONFIG)).toBe("ignored");
+    expect(classifyTask({ listId: "qualquer-outro", folderId: null, points: null }, CONFIG)).toBe("ignored");
+    expect(classifyTask({ listId: null, folderId: null, points: null }, CONFIG)).toBe("ignored");
   });
 
-  it("suporte ganha precedência sobre dev em colisão de list_id", () => {
-    const collision: TaskClassificationConfig = {
-      dev: { listIds: ["colisao"], folderIds: [] },
-      support: { listIds: ["colisao"], folderIds: [] },
-    };
-    expect(classifyTask({ listId: "colisao", folderId: null }, collision)).toBe("support");
+  it("task com pontos > 0 é SEMPRE dev (mesmo em lista de suporte)", () => {
+    expect(classifyTask({ listId: SUPPORT_LIST, folderId: null, points: 3 }, CONFIG)).toBe("dev");
+    expect(classifyTask({ listId: null, folderId: null, points: 1 }, CONFIG)).toBe("dev");
+  });
+
+  it("task com pontos 0 ou null segue a regra de lista/folder", () => {
+    expect(classifyTask({ listId: SUPPORT_LIST, folderId: null, points: 0 }, CONFIG)).toBe("support");
+    expect(classifyTask({ listId: SUPPORT_LIST, folderId: null, points: null }, CONFIG)).toBe("support");
   });
 });
 
@@ -152,7 +154,7 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
     expect(r.throughputPerWeek).toBe(2);
   });
 
-  it("suporte é medido mas não pontua (pontos no total = só dev)", () => {
+  it("task de suporte COM pontos vira dev (pontos = trabalho técnico)", () => {
     const r = computeTaskMetrics(
       [
         task({ listId: DEV_LIST, points: 10, dateClosed: NOW, dateCreated: NOW - HOUR }),
@@ -161,12 +163,25 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
       NOW,
       CONFIG,
     );
+    // Ambas viram dev porque têm pontos > 0
+    expect(r.byType.dev.tasksClosed).toBe(2);
+    expect(r.byType.support.tasksClosed).toBe(0);
+    expect(r.byType.dev.pointsSum).toBe(15);
+    expect(r.pointsSum).toBe(15);
+  });
+
+  it("task de suporte SEM pontos continua como suporte", () => {
+    const r = computeTaskMetrics(
+      [
+        task({ listId: DEV_LIST, points: 10, dateClosed: NOW, dateCreated: NOW - HOUR }),
+        task({ listId: SUPPORT_LIST, points: null, dateClosed: NOW, dateCreated: NOW - HOUR }),
+      ],
+      NOW,
+      CONFIG,
+    );
     expect(r.byType.dev.tasksClosed).toBe(1);
     expect(r.byType.support.tasksClosed).toBe(1);
-    expect(r.byType.dev.pointsSum).toBe(10);
-    expect(r.byType.support.pointsSum).toBe(5); // o segmento guarda o valor bruto
-    expect(r.pointsSum).toBe(10); // mas o total da variável ignora suporte
-    expect(r.tasksClosed).toBe(2); // totais contam dev + suporte
+    expect(r.pointsSum).toBe(10);
   });
 
   it("tasks ignoradas não entram nos totais", () => {

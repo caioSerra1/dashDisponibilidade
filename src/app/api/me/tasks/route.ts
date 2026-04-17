@@ -39,7 +39,7 @@ async function buildPayload(
   const config = await loadConfig();
   const classify = (t: AuditedTask): TaskType =>
     classifyTask(
-      { listId: t.listId, folderId: t.folderId },
+      { listId: t.listId, folderId: t.folderId, points: t.points },
       config.taskClassification,
     );
 
