@@ -114,6 +114,8 @@ function computeSegment(tasks: readonly RichTask[], now: number): TypeMetrics {
     0,
   );
 
+  // MTTR = execução → fechamento (todas as prioridades).
+  // Só conta a partir do momento que a task foi pra execução.
   const resolutionHours = closed
     .filter((t) => typeof t.dateCreated === "number")
     .map((t) => ((t.dateClosed as number) - (t.dateCreated as number)) / HOUR_MS)
@@ -124,8 +126,12 @@ function computeSegment(tasks: readonly RichTask[], now: number): TypeMetrics {
     .map((t) => ((t.dateClosed as number) - (t.dateStarted as number)) / HOUR_MS)
     .filter((h) => h >= 0);
 
-  // MTTA — da criação ao primeiro entry em execução (dateStarted)
-  const ackHours = closed
+  // MTTA — só tasks com prioridade alta ou urgente.
+  // Tasks normais/baixas abertas há meses distorcem a média.
+  const highPriorityClosed = closed.filter(
+    (t) => t.priority === "urgent" || t.priority === "high",
+  );
+  const ackHours = highPriorityClosed
     .filter((t) => typeof t.dateCreated === "number" && typeof t.dateStarted === "number")
     .map((t) => ((t.dateStarted as number) - (t.dateCreated as number)) / HOUR_MS)
     .filter((h) => h >= 0);

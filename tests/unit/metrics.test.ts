@@ -89,7 +89,7 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
     expect(r.byType.dev.pointsSum).toBe(8);
   });
 
-  it("avgResolutionHours em closed - created", () => {
+  it("avgResolutionHours conta todas as prioridades (criação → fechamento)", () => {
     const r = computeTaskMetrics(
       [
         task({ dateClosed: NOW, dateCreated: NOW - 10 * HOUR }),
@@ -101,7 +101,7 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
     expect(r.avgResolutionHours).toBe(15);
   });
 
-  it("avgCycleHours só quando dateStarted existir", () => {
+  it("avgCycleHours conta todas as prioridades (execução → fechamento)", () => {
     const r = computeTaskMetrics(
       [
         task({ dateClosed: NOW, dateStarted: NOW - 4 * HOUR, dateCreated: NOW - 24 * HOUR }),
@@ -198,7 +198,7 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
     expect(r.byType.ignored.tasksClosed).toBe(1);
   });
 
-  it("MTTA (avgAckHours) é calculado pra suporte (created → dateStarted)", () => {
+  it("MTTA (avgAckHours) só de tasks alta/urgente (created → dateStarted)", () => {
     const r = computeTaskMetrics(
       [
         task({
@@ -206,18 +206,27 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
           dateCreated: NOW - 10 * HOUR,
           dateStarted: NOW - 8 * HOUR,
           dateClosed: NOW - HOUR,
+          priority: "urgent",
         }),
         task({
           listId: SUPPORT_LIST,
           dateCreated: NOW - 6 * HOUR,
           dateStarted: NOW - 2 * HOUR,
           dateClosed: NOW - HOUR,
+          priority: "high",
+        }),
+        task({
+          listId: SUPPORT_LIST,
+          dateCreated: NOW - 100 * HOUR,
+          dateStarted: NOW - 50 * HOUR,
+          dateClosed: NOW - HOUR,
+          priority: "normal",
         }),
       ],
       NOW,
       CONFIG,
     );
-    // Task 1: 10-8=2h, Task 2: 6-2=4h, média = 3h
+    // Task 1: 10-8=2h, Task 2: 6-2=4h (normal ignorada), média = 3h
     expect(r.byType.support.avgAckHours).toBe(3);
   });
 
