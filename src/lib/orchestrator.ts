@@ -127,6 +127,77 @@ function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
+/**
+ * Job leve dedicado a Zabbix: busca disponibilidade atual do mês e atualiza
+ * o slaMedioMes + valorDisponibilidade no DailySnapshot de HOJE de todos os
+ * users ativos. Não toca ClickUp (rápido, ~2s vs ~30s do runDaily).
+ *
+ * Pensado pra rodar a cada 2h, mais frequente que o runDaily de 30min, sem
+ * o custo de buscar tasks de cada user.
+ */
+export async function runZabbixSync(now: Date = new Date()): Promise<{ updated: number; sla: number }> {
+  const run = await prisma.jobRun.create({ data: { job: "zabbix", status: "ok" } });
+  try {
+    const year = now.getUTCFullYear();
+    const month = now.getUTCMonth() + 1;
+    const today = startOfUtcDay(now);
+
+    // 1. Mantém inventário sincronizado pra refletir hosts novos/removidos no Zabbix.
+    try {
+      await syncZabbixHosts();
+    } catch (e) {
+      console.error("[zabbix-sync] syncZabbixHosts falhou", (e as Error).message);
+    }
+
+    // 2. Busca disponibilidade real do mês até agora.
+    const config = await loadConfig();
+    const tiers = await loadTiers();
+    const { media: slaMedio, breakdown } = await computeSlaMedio(year, month, now);
+
+    // 3. Atualiza DailySnapshot de hoje pra cada user (recalcula valorDisponibilidade
+    //    com o SLA novo, mantendo pontosAcumulados/valorPontos do último runDaily).
+    const todaySnapshots = await prisma.dailySnapshot.findMany({
+      where: { date: today },
+    });
+
+    let updated = 0;
+    for (const snap of todaySnapshots) {
+      const result = computePartial({
+        pontosMes: snap.pontosAcumulados,
+        slaMedioMes: slaMedio,
+        valorPorPonto: config.valorPorPonto,
+        valorDisponibilidade100: config.valorDisponibilidade100,
+        tiers,
+      });
+      await prisma.dailySnapshot.update({
+        where: { id: snap.id },
+        data: {
+          slaMedioMes: slaMedio,
+          valorDisponibilidade: result.valorDisponibilidade,
+          valorParcial: result.valorParcial,
+          hostBreakdown: breakdown as unknown as object,
+        },
+      });
+      updated += 1;
+    }
+
+    await prisma.jobRun.update({
+      where: { id: run.id },
+      data: {
+        finishedAt: new Date(),
+        message: `sla=${slaMedio.toFixed(2)}% updated=${updated}`,
+      },
+    });
+    return { updated, sla: slaMedio };
+  } catch (e) {
+    await prisma.jobRun.update({
+      where: { id: run.id },
+      data: { finishedAt: new Date(), status: "error", message: (e as Error).message },
+    });
+    throw e;
+  }
+}
+
 export async function runDaily(now: Date = new Date()): Promise<{ processed: number }> {
   const run = await prisma.jobRun.create({ data: { job: "daily", status: "ok" } });
   try {

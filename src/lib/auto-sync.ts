@@ -1,8 +1,9 @@
-import { runDaily, runClose } from "./orchestrator";
+import { runDaily, runClose, runZabbixSync } from "./orchestrator";
 import { loadConfig, saveConfig } from "./config";
 import { prisma } from "./db";
 
 const INTERVAL_MS = 30 * 60 * 1000;
+const ZABBIX_INTERVAL_MS = 2 * 60 * 60 * 1000;
 const SPRINTS_FOLDER_ID = "901314217806";
 let started = false;
 
@@ -114,4 +115,14 @@ export function startAutoSync() {
       .then((r) => console.log(`[auto-sync] ok, processed=${r.processed}`))
       .catch((e) => console.error("[auto-sync] falhou", e));
   }, INTERVAL_MS);
+
+  // Job dedicado de Zabbix a cada 2h: atualiza SLA do mês corrente sem
+  // tocar no ClickUp. Garante que disponibilidade reflita incidentes em
+  // andamento mesmo se o runDaily estiver com algum problema.
+  setInterval(() => {
+    console.log("[auto-sync] executando runZabbixSync...");
+    runZabbixSync()
+      .then((r) => console.log(`[auto-sync] zabbix ok, sla=${r.sla.toFixed(2)}% updated=${r.updated}`))
+      .catch((e) => console.error("[auto-sync] zabbix falhou", e));
+  }, ZABBIX_INTERVAL_MS);
 }

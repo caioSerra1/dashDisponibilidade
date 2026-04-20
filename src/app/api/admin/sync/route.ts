@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { runDaily, runClose, syncZabbixHosts } from "@/lib/orchestrator";
+import { runDaily, runClose, runZabbixSync, syncZabbixHosts } from "@/lib/orchestrator";
 
 export const runtime = "nodejs";
 
@@ -14,6 +14,10 @@ export async function POST(request: Request) {
   try {
     if (kind === "hosts") {
       const r = await syncZabbixHosts();
+      return NextResponse.json({ ok: true, ...r });
+    }
+    if (kind === "zabbix") {
+      const r = await runZabbixSync();
       return NextResponse.json({ ok: true, ...r });
     }
     if (kind === "close") {
