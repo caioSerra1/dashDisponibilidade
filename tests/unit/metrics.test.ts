@@ -53,9 +53,11 @@ describe("classifyTask", () => {
     expect(classifyTask({ listId: null, folderId: null, points: null }, CONFIG)).toBe("ignored");
   });
 
-  it("task com pontos > 0 é SEMPRE dev (mesmo em lista de suporte)", () => {
-    expect(classifyTask({ listId: SUPPORT_LIST, folderId: null, points: 3 }, CONFIG)).toBe("dev");
-    expect(classifyTask({ listId: null, folderId: null, points: 1 }, CONFIG)).toBe("dev");
+  it("classificação ignora o campo points (suporte com pontos continua suporte)", () => {
+    // Mesmo com points preenchido, suporte fica como suporte (não pontua).
+    expect(classifyTask({ listId: SUPPORT_LIST, folderId: null, points: 3 }, CONFIG)).toBe("support");
+    // Lista não mapeada com points fica como ignored (também não pontua).
+    expect(classifyTask({ listId: null, folderId: null, points: 1 }, CONFIG)).toBe("ignored");
   });
 
   it("task com pontos 0 ou null segue a regra de lista/folder", () => {
@@ -160,20 +162,36 @@ describe("computeTaskMetrics (totais + segmentado)", () => {
     expect(r.throughputPerWeek).toBe(2);
   });
 
-  it("task de suporte COM pontos vira dev (pontos = trabalho técnico)", () => {
+  it("task de suporte com pontos NÃO pontua (suporte nunca pontua)", () => {
     const r = computeTaskMetrics(
       [
         task({ listId: DEV_LIST, points: 10, dateClosed: NOW, dateCreated: NOW - HOUR }),
+        // Suporte com points > 0: classificada como suporte, points descartados.
         task({ listId: SUPPORT_LIST, points: 5, dateClosed: NOW, dateCreated: NOW - HOUR }),
       ],
       NOW,
       CONFIG,
     );
-    // Ambas viram dev porque têm pontos > 0
-    expect(r.byType.dev.tasksClosed).toBe(2);
-    expect(r.byType.support.tasksClosed).toBe(0);
-    expect(r.byType.dev.pointsSum).toBe(15);
-    expect(r.pointsSum).toBe(15);
+    expect(r.byType.dev.tasksClosed).toBe(1);
+    expect(r.byType.support.tasksClosed).toBe(1);
+    expect(r.byType.dev.pointsSum).toBe(10);
+    expect(r.pointsSum).toBe(10);
+  });
+
+  it("task com pontos numa lista NÃO mapeada é ignored (não pontua)", () => {
+    const r = computeTaskMetrics(
+      [
+        task({ listId: DEV_LIST, points: 10, dateClosed: NOW, dateCreated: NOW - HOUR }),
+        // Pontos numa lista fora de sprint/backlog/suporte → ignored.
+        task({ listId: "lista-aleatoria", points: 99, dateClosed: NOW, dateCreated: NOW - HOUR }),
+      ],
+      NOW,
+      CONFIG,
+    );
+    expect(r.byType.dev.tasksClosed).toBe(1);
+    expect(r.byType.dev.pointsSum).toBe(10);
+    expect(r.pointsSum).toBe(10);
+    expect(r.byType.ignored.tasksClosed).toBe(1);
   });
 
   it("task de suporte SEM pontos continua como suporte", () => {
