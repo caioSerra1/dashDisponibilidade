@@ -95,30 +95,32 @@ async function computeSlaMedio(
   const enabledHosts = await prisma.zabbixHost.findMany({ where: { enabled: true } });
   if (enabledHosts.length === 0) return { media: 100, breakdown: [] };
   const { from } = monthRange(year, month);
-  try {
-    const results = await getAvailability(
-      enabledHosts.map((h) => h.hostId),
-      from,
-      until,
-    );
-    const byId = new Map(results.map((r) => [r.hostId, r.pct]));
-    const breakdown: HostBreakdownItem[] = enabledHosts.map((h) => ({
-      hostId: h.hostId,
-      name: h.name,
-      pct: byId.get(h.hostId) ?? 100,
-    }));
-    const media =
-      breakdown.length === 0
-        ? 100
-        : breakdown.reduce((acc, r) => acc + r.pct, 0) / breakdown.length;
-    return { media, breakdown };
-  } catch (e) {
-    console.error("[zabbix] getAvailability falhou, assumindo 100", e);
-    return {
-      media: 100,
-      breakdown: enabledHosts.map((h) => ({ hostId: h.hostId, name: h.name, pct: 100 })),
-    };
-  }
+  // Não silencia erro: o caller (runDaily/runClose) decide o que fazer (usar
+  // último SLA conhecido em vez de fingir 100%, marcar JobRun com warning).
+  const results = await getAvailability(
+    enabledHosts.map((h) => h.hostId),
+    from,
+    until,
+  );
+  const byId = new Map(results.map((r) => [r.hostId, r.pct]));
+  const breakdown: HostBreakdownItem[] = enabledHosts.map((h) => ({
+    hostId: h.hostId,
+    name: h.name,
+    pct: byId.get(h.hostId) ?? 100,
+  }));
+  const media =
+    breakdown.length === 0
+      ? 100
+      : breakdown.reduce((acc, r) => acc + r.pct, 0) / breakdown.length;
+  return { media, breakdown };
+}
+
+async function lastKnownSla(): Promise<number | null> {
+  const last = await prisma.dailySnapshot.findFirst({
+    orderBy: { date: "desc" },
+    select: { slaMedioMes: true },
+  });
+  return last?.slaMedioMes ?? null;
 }
 
 function startOfUtcDay(d: Date): Date {
@@ -135,7 +137,28 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
 
     const config = await loadConfig();
     const tiers = await loadTiers();
-    const { media: slaMedio, breakdown } = await computeSlaMedio(year, month, now);
+
+    let slaMedio = 100;
+    let breakdown: HostBreakdownItem[] = [];
+    let zabbixWarning: string | null = null;
+    try {
+      const r = await computeSlaMedio(year, month, now);
+      slaMedio = r.media;
+      breakdown = r.breakdown;
+    } catch (e) {
+      const msg = (e as Error).message;
+      console.error("[daily] Zabbix falhou, usando \u00faltimo SLA conhecido", msg);
+      const fallback = await lastKnownSla();
+      slaMedio = fallback ?? 100;
+      zabbixWarning = `zabbix:${msg}`;
+    }
+
+    // Sincroniza inventário de hosts pra manter lastSync atualizado
+    try {
+      await syncZabbixHosts();
+    } catch (e) {
+      console.error("[daily] syncZabbixHosts falhou", (e as Error).message);
+    }
 
     const users = await prisma.user.findMany({
       where: { active: true, clickupUserId: { not: null } },
@@ -242,9 +265,16 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
       processed += 1;
     }
 
+    const message = zabbixWarning
+      ? `processed=${processed} ${zabbixWarning}`
+      : `processed=${processed}`;
     await prisma.jobRun.update({
       where: { id: run.id },
-      data: { finishedAt: new Date(), message: `processed=${processed}` },
+      data: {
+        finishedAt: new Date(),
+        status: zabbixWarning ? "warn" : "ok",
+        message,
+      },
     });
     return { processed };
   } catch (e) {
@@ -307,14 +337,33 @@ async function maybeCreditGoals(
   }
 }
 
-export async function runClose(target?: { year: number; month: number }): Promise<{ closed: number }> {
+export interface RunCloseOptions {
+  year: number;
+  month: number;
+  /** Apaga MonthlyClose+TaskMetricSnapshot existentes do mês e refaz tudo. */
+  force?: boolean;
+}
+
+export async function runClose(target?: RunCloseOptions): Promise<{ closed: number }> {
   const run = await prisma.jobRun.create({ data: { job: "close", status: "ok" } });
   try {
     const ref = target ?? previousMonth();
+    const force = target?.force ?? false;
     const { from, to } = monthRange(ref.year, ref.month);
     const config = await loadConfig();
     const tiers = await loadTiers();
-    const { media: slaMedio } = await computeSlaMedio(ref.year, ref.month, to);
+
+    let slaMedio = 100;
+    let zabbixWarning: string | null = null;
+    try {
+      const r = await computeSlaMedio(ref.year, ref.month, to);
+      slaMedio = r.media;
+    } catch (e) {
+      const msg = (e as Error).message;
+      console.error(`[close] Zabbix falhou pra ${ref.month}/${ref.year}, usando \u00faltimo SLA conhecido`, msg);
+      slaMedio = (await lastKnownSla()) ?? 100;
+      zabbixWarning = `zabbix:${msg}`;
+    }
 
     const users = await prisma.user.findMany({
       where: { active: true, clickupUserId: { not: null } },
@@ -326,7 +375,7 @@ export async function runClose(target?: { year: number; month: number }): Promis
       const existing = await prisma.monthlyClose.findUnique({
         where: { userId_year_month: { userId: user.id, year: ref.year, month: ref.month } },
       });
-      if (existing) continue;
+      if (existing && !force) continue;
 
       let tasks: RichTask[] = [];
       try {
@@ -346,17 +395,56 @@ export async function runClose(target?: { year: number; month: number }): Promis
         valorDisponibilidade100: config.valorDisponibilidade100,
         tiers,
       });
-      await prisma.monthlyClose.create({
-        data: {
-          userId: user.id,
-          year: ref.year,
-          month: ref.month,
-          pontos,
-          slaFinal: slaMedio,
-          valorPontos: result.valorPontos,
-          valorDisponibilidade: result.valorDisponibilidade,
-          valorTotal: result.valorParcial,
-        },
+
+      const closeData = {
+        pontos,
+        slaFinal: slaMedio,
+        valorPontos: result.valorPontos,
+        valorDisponibilidade: result.valorDisponibilidade,
+        valorTotal: result.valorParcial,
+      };
+
+      if (existing && force) {
+        await prisma.monthlyClose.update({
+          where: { id: existing.id },
+          data: closeData,
+        });
+      } else {
+        await prisma.monthlyClose.create({
+          data: { userId: user.id, year: ref.year, month: ref.month, ...closeData },
+        });
+      }
+
+      // Persiste TaskMetricSnapshot do último dia do mês — alimenta MTTR/MTTA
+      // e contagens segmentadas no mural pra meses passados (sem isso, fica vazio).
+      const snapshotDate = startOfUtcDay(to);
+      const metricSnapshotData = {
+        year: ref.year,
+        month: ref.month,
+        tasksClosedMonth: metrics.tasksClosed,
+        tasksClosedWeek: metrics.tasksClosedLast7d,
+        pointsMonth: metrics.pointsSum,
+        avgResolutionHoursMonth: metrics.avgResolutionHours,
+        avgCycleHoursMonth: metrics.avgCycleHours,
+        throughputPerWeek: metrics.throughputPerWeek,
+        reopenedCount: metrics.returnedToExecution,
+        tagsBreakdown: metrics.tagsBreakdown as unknown as object,
+        priorityBreakdown: metrics.priorityBreakdown as unknown as object,
+        tasksClosedMonthDev: metrics.byType.dev.tasksClosed,
+        tasksClosedMonthSupport: metrics.byType.support.tasksClosed,
+        pointsMonthDev: metrics.byType.dev.pointsSum,
+        avgResolutionHoursDev: metrics.byType.dev.avgResolutionHours,
+        avgResolutionHoursSupport: metrics.byType.support.avgResolutionHours,
+        avgCycleHoursDev: metrics.byType.dev.avgCycleHours,
+        avgCycleHoursSupport: metrics.byType.support.avgCycleHours,
+        avgAckHoursSupport: metrics.byType.support.avgAckHours,
+        returnedCountMonth: metrics.returnedToExecution,
+        typeBreakdown: metrics.byType as unknown as object,
+      };
+      await prisma.taskMetricSnapshot.upsert({
+        where: { userId_date: { userId: user.id, date: snapshotDate } },
+        update: metricSnapshotData,
+        create: { userId: user.id, date: snapshotDate, ...metricSnapshotData },
       });
 
       await maybeCreditMilestones(user.id, ref.year, ref.month, {
@@ -368,9 +456,16 @@ export async function runClose(target?: { year: number; month: number }): Promis
       closed += 1;
     }
 
+    const message = zabbixWarning
+      ? `closed=${closed} ${zabbixWarning}`
+      : `closed=${closed}`;
     await prisma.jobRun.update({
       where: { id: run.id },
-      data: { finishedAt: new Date(), message: `closed=${closed}` },
+      data: {
+        finishedAt: new Date(),
+        status: zabbixWarning ? "warn" : "ok",
+        message,
+      },
     });
     return { closed };
   } catch (e) {

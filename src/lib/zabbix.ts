@@ -81,15 +81,51 @@ export async function getAvailability(
   try {
     const fromTs = Math.floor(from.getTime() / 1000);
     const toTs = Math.floor(to.getTime() / 1000);
-    const results = await rpc<Array<{ hostid: string; sla?: number }>>(
-      "service.getsla",
+    const totalSeconds = Math.max(1, toTs - fromTs);
+
+    // Estratégia: contar tempo real em "host down" via eventos no período.
+    // service.getsla foi removido do Zabbix 6+, então calculamos direto:
+    //   SLA% = 100 - (tempo_total_em_problema / período_total) * 100
+    // Considera triggers de severidade "high" ou "disaster" pra evitar
+    // contar warnings transitórios como indisponibilidade.
+    const events = await rpc<Array<{
+      eventid: string;
+      hosts: Array<{ hostid: string }>;
+      clock: string;
+      r_clock?: string;
+      value: string;
+      severity?: string;
+    }>>(
+      "problem.get",
       {
-        serviceids: hostIds,
-        intervals: [{ from: fromTs, to: toTs }],
+        time_from: fromTs,
+        time_till: toTs,
+        hostids: hostIds,
+        recent: false,
+        sortfield: ["eventid"],
+        sortorder: "ASC",
+        selectHosts: ["hostid"],
+        severities: [4, 5], // high + disaster
       },
       auth,
     );
-    return results.map((r) => ({ hostId: r.hostid, pct: typeof r.sla === "number" ? r.sla : 100 }));
+
+    // Soma duração de cada problema por host. Problemas ainda abertos contam até `to`.
+    const downSecondsByHost = new Map<string, number>();
+    for (const ev of events) {
+      const start = Math.max(Number(ev.clock), fromTs);
+      const end = ev.r_clock && Number(ev.r_clock) > 0 ? Math.min(Number(ev.r_clock), toTs) : toTs;
+      const duration = Math.max(0, end - start);
+      for (const h of ev.hosts ?? []) {
+        downSecondsByHost.set(h.hostid, (downSecondsByHost.get(h.hostid) ?? 0) + duration);
+      }
+    }
+
+    return hostIds.map((hostId) => {
+      const down = downSecondsByHost.get(hostId) ?? 0;
+      const pct = Math.max(0, Math.min(100, ((totalSeconds - down) / totalSeconds) * 100));
+      return { hostId, pct: Math.round(pct * 100) / 100 };
+    });
   } finally {
     await logout(auth);
   }

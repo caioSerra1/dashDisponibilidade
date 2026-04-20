@@ -19,10 +19,11 @@ export async function POST(request: Request) {
     if (kind === "close") {
       const year = Number(url.searchParams.get("year"));
       const month = Number(url.searchParams.get("month"));
+      const force = url.searchParams.get("force") === "1";
       if (!year || !month || month < 1 || month > 12) {
         return NextResponse.json({ error: "year e month obrigatórios" }, { status: 400 });
       }
-      const r = await runClose({ year, month });
+      const r = await runClose({ year, month, force });
       return NextResponse.json({ ok: true, ...r });
     }
     const r = await runDaily();

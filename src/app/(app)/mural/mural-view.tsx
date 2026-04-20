@@ -137,7 +137,7 @@ export function MuralView() {
     const month = de.getUTCMonth() + 1;
     setSyncing(true);
     try {
-      await fetch(`/api/admin/sync?kind=close&year=${year}&month=${month}`, { method: "POST" });
+      await fetch(`/api/admin/sync?kind=close&year=${year}&month=${month}&force=1`, { method: "POST" });
       loadData();
     } finally {
       setSyncing(false);
@@ -201,12 +201,16 @@ export function MuralView() {
         <p className="text-sm text-muted-foreground">Carregando…</p>
       ) : (
         <>
-          <TeamKpis kpis={{
-            ...data.kpisEquipe,
-            wipAtual: Object.keys(wipByUser).length > 0
-              ? Object.values(wipByUser).reduce((a, b) => a + b, 0)
-              : data.kpisEquipe.wipAtual,
-          }} />
+          <TeamKpis
+            kpis={{
+              ...data.kpisEquipe,
+              wipAtual:
+                Object.keys(wipByUser).length > 0
+                  ? Object.values(wipByUser).reduce((a, b) => a + b, 0)
+                  : data.kpisEquipe.wipAtual,
+            }}
+            showWip={!isPastMonth}
+          />
 
           <Card>
             <CardHeader>
@@ -250,7 +254,10 @@ export function MuralView() {
               <div className="grid gap-4 md:grid-cols-2">
                 {data.membros.map((m) => {
                   const liveWip = wipByUser[m.userId];
-                  const memberWithWip = liveWip != null ? { ...m, wipAtual: liveWip } : m;
+                  const memberWithWip =
+                    !isPastMonth && liveWip != null
+                      ? { ...m, wipAtual: liveWip }
+                      : { ...m, wipAtual: isPastMonth ? 0 : m.wipAtual };
                   return (
                     <MemberCardBlock
                       key={m.userId}
@@ -274,7 +281,13 @@ export function MuralView() {
   );
 }
 
-function TeamKpis({ kpis }: { kpis: MuralPayload["kpisEquipe"] }) {
+function TeamKpis({
+  kpis,
+  showWip = true,
+}: {
+  kpis: MuralPayload["kpisEquipe"];
+  showWip?: boolean;
+}) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       <KpiCard
@@ -303,11 +316,13 @@ function TeamKpis({ kpis }: { kpis: MuralPayload["kpisEquipe"] }) {
         nome="Tempo médio até assumir uma demanda (suporte)"
         value={kpis.mttaMedio != null ? `${kpis.mttaMedio}h` : "—"}
       />
-      <KpiCard
-        sigla="WIP"
-        nome="Tasks em andamento ao mesmo tempo"
-        value={String(kpis.wipAtual)}
-      />
+      {showWip && (
+        <KpiCard
+          sigla="WIP"
+          nome="Tasks em andamento ao mesmo tempo"
+          value={String(kpis.wipAtual)}
+        />
+      )}
       <KpiCard
         sigla="Throughput"
         nome="Tasks dev fechadas por semana"
