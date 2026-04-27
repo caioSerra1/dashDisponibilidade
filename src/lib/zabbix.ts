@@ -88,33 +88,66 @@ export async function getAvailability(
     //   SLA% = 100 - (tempo_total_em_problema / período_total) * 100
     // Considera triggers de severidade "high" ou "disaster" pra evitar
     // contar warnings transitórios como indisponibilidade.
-    const events = await rpc<Array<{
+    //
+    // Usa `event.get` (não `problem.get`) porque só `event.get` aceita
+    // `selectHosts` — `problem.get` retorna 'Invalid parameter selectHosts'.
+    const problems = await rpc<Array<{
       eventid: string;
       hosts: Array<{ hostid: string }>;
       clock: string;
-      r_clock?: string;
+      r_eventid?: string;
       value: string;
-      severity?: string;
     }>>(
-      "problem.get",
+      "event.get",
       {
         time_from: fromTs,
         time_till: toTs,
         hostids: hostIds,
-        recent: false,
-        sortfield: ["eventid"],
-        sortorder: "ASC",
-        selectHosts: ["hostid"],
+        source: 0, // trigger
+        object: 0, // trigger
+        value: 1, // PROBLEM
         severities: [4, 5], // high + disaster
+        selectHosts: ["hostid"],
+        sortfield: ["clock"],
+        sortorder: "ASC",
       },
       auth,
     );
 
-    // Soma duração de cada problema por host. Problemas ainda abertos contam até `to`.
+    // Cada PROBLEM (value=1) tem r_eventid apontando pro OK que o resolveu.
+    // Buscamos o clock desses OK events em uma chamada batch.
+    const resolutionIds = Array.from(
+      new Set(
+        problems
+          .map((p) => p.r_eventid)
+          .filter((id): id is string => id != null && id !== "0"),
+      ),
+    );
+    const resolutions =
+      resolutionIds.length > 0
+        ? await rpc<Array<{ eventid: string; clock: string }>>(
+            "event.get",
+            {
+              eventids: resolutionIds,
+              output: ["eventid", "clock"],
+            },
+            auth,
+          )
+        : [];
+    const resolutionClock = new Map(
+      resolutions.map((r) => [r.eventid, Number(r.clock)]),
+    );
+
+    // Soma duração de cada problema por host. Problemas sem r_eventid
+    // (ainda abertos) contam até `to`.
     const downSecondsByHost = new Map<string, number>();
-    for (const ev of events) {
+    for (const ev of problems) {
       const start = Math.max(Number(ev.clock), fromTs);
-      const end = ev.r_clock && Number(ev.r_clock) > 0 ? Math.min(Number(ev.r_clock), toTs) : toTs;
+      const resolvedAt =
+        ev.r_eventid && ev.r_eventid !== "0"
+          ? resolutionClock.get(ev.r_eventid) ?? toTs
+          : toTs;
+      const end = Math.min(resolvedAt, toTs);
       const duration = Math.max(0, end - start);
       for (const h of ev.hosts ?? []) {
         downSecondsByHost.set(h.hostid, (downSecondsByHost.get(h.hostid) ?? 0) + duration);

@@ -141,14 +141,6 @@ async function computeSlaMedio(
   return { media, breakdown };
 }
 
-async function lastKnownSla(): Promise<number | null> {
-  const last = await prisma.dailySnapshot.findFirst({
-    orderBy: { date: "desc" },
-    select: { slaMedioMes: true },
-  });
-  return last?.slaMedioMes ?? null;
-}
-
 function startOfUtcDay(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
@@ -235,20 +227,10 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
     const config = await loadConfig();
     const tiers = await loadTiers();
 
-    let slaMedio = 100;
-    let breakdown: HostBreakdownItem[] = [];
-    let zabbixWarning: string | null = null;
-    try {
-      const r = await computeSlaMedio(year, month, now);
-      slaMedio = r.media;
-      breakdown = r.breakdown;
-    } catch (e) {
-      const msg = (e as Error).message;
-      console.error("[daily] Zabbix falhou, usando \u00faltimo SLA conhecido", msg);
-      const fallback = await lastKnownSla();
-      slaMedio = fallback ?? 100;
-      zabbixWarning = `zabbix:${msg}`;
-    }
+    // Zabbix erra -> JobRun fica como error (sem fallback fake de 100% nem
+    // "ultimo SLA"). Melhor o run aparecer vermelho no admin/jobs do que
+    // silenciosamente persistir um numero que nao reflete a realidade.
+    const { media: slaMedio, breakdown } = await computeSlaMedio(year, month, now);
 
     // Sincroniza inventário de hosts pra manter lastSync atualizado
     try {
@@ -362,15 +344,11 @@ export async function runDaily(now: Date = new Date()): Promise<{ processed: num
       processed += 1;
     }
 
-    const message = zabbixWarning
-      ? `processed=${processed} ${zabbixWarning}`
-      : `processed=${processed}`;
     await prisma.jobRun.update({
       where: { id: run.id },
       data: {
         finishedAt: new Date(),
-        status: zabbixWarning ? "warn" : "ok",
-        message,
+        message: `processed=${processed}`,
       },
     });
     return { processed };
@@ -450,17 +428,7 @@ export async function runClose(target?: RunCloseOptions): Promise<{ closed: numb
     const config = await loadConfig();
     const tiers = await loadTiers();
 
-    let slaMedio = 100;
-    let zabbixWarning: string | null = null;
-    try {
-      const r = await computeSlaMedio(ref.year, ref.month, to);
-      slaMedio = r.media;
-    } catch (e) {
-      const msg = (e as Error).message;
-      console.error(`[close] Zabbix falhou pra ${ref.month}/${ref.year}, usando \u00faltimo SLA conhecido`, msg);
-      slaMedio = (await lastKnownSla()) ?? 100;
-      zabbixWarning = `zabbix:${msg}`;
-    }
+    const { media: slaMedio } = await computeSlaMedio(ref.year, ref.month, to);
 
     const users = await prisma.user.findMany({
       where: { active: true, clickupUserId: { not: null } },
@@ -553,15 +521,11 @@ export async function runClose(target?: RunCloseOptions): Promise<{ closed: numb
       closed += 1;
     }
 
-    const message = zabbixWarning
-      ? `closed=${closed} ${zabbixWarning}`
-      : `closed=${closed}`;
     await prisma.jobRun.update({
       where: { id: run.id },
       data: {
         finishedAt: new Date(),
-        status: zabbixWarning ? "warn" : "ok",
-        message,
+        message: `closed=${closed}`,
       },
     });
     return { closed };
