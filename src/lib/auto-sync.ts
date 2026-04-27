@@ -1,9 +1,11 @@
 import { runDaily, runClose, runZabbixSync } from "./orchestrator";
+import { runWebMonitorCheck } from "./web-monitor";
 import { loadConfig, saveConfig } from "./config";
 import { prisma } from "./db";
 
 const INTERVAL_MS = 30 * 60 * 1000;
 const ZABBIX_INTERVAL_MS = 2 * 60 * 60 * 1000;
+const WEB_MONITOR_INTERVAL_MS = 5 * 60 * 1000;
 const SPRINTS_FOLDER_ID = "901314217806";
 let started = false;
 
@@ -125,4 +127,18 @@ export function startAutoSync() {
       .then((r) => console.log(`[auto-sync] zabbix ok, sla=${r.sla.toFixed(2)}% updated=${r.updated}`))
       .catch((e) => console.error("[auto-sync] zabbix falhou", e));
   }, ZABBIX_INTERVAL_MS);
+
+  // Monitor de aplicações (URLs) a cada 5 min: faz GET nas WebApps
+  // habilitadas e registra eventos de transição up/down pro cálculo de SLA.
+  setTimeout(() => {
+    runWebMonitorCheck()
+      .then((r) => console.log(`[auto-sync] web-monitor ok, checked=${r.checked} down=${r.downNow}`))
+      .catch((e) => console.error("[auto-sync] web-monitor falhou", e));
+  }, 90_000);
+
+  setInterval(() => {
+    runWebMonitorCheck()
+      .then((r) => console.log(`[auto-sync] web-monitor ok, checked=${r.checked} down=${r.downNow}`))
+      .catch((e) => console.error("[auto-sync] web-monitor falhou", e));
+  }, WEB_MONITOR_INTERVAL_MS);
 }

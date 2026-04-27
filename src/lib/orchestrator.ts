@@ -9,6 +9,7 @@ import {
   computeExecutionMinutes,
 } from "./clickup";
 import { getAvailability, listHosts } from "./zabbix";
+import { getWebAppSla } from "./web-monitor";
 import { computePartial } from "./calculate";
 import { computeTaskMetrics, type RichTask, type TaskMetrics } from "./metrics";
 import { evaluateGoals } from "./goals";
@@ -85,6 +86,8 @@ export interface HostBreakdownItem {
   hostId: string;
   name: string;
   pct: number;
+  /** "server" = host Zabbix; "app" = URL monitorada internamente. */
+  type?: "server" | "app";
 }
 
 async function computeSlaMedio(
@@ -92,22 +95,45 @@ async function computeSlaMedio(
   month: number,
   until: Date,
 ): Promise<{ media: number; breakdown: HostBreakdownItem[] }> {
-  const enabledHosts = await prisma.zabbixHost.findMany({ where: { enabled: true } });
-  if (enabledHosts.length === 0) return { media: 100, breakdown: [] };
   const { from } = monthRange(year, month);
-  // Não silencia erro: o caller (runDaily/runClose) decide o que fazer (usar
-  // último SLA conhecido em vez de fingir 100%, marcar JobRun com warning).
-  const results = await getAvailability(
-    enabledHosts.map((h) => h.hostId),
-    from,
-    until,
+
+  const [enabledHosts, enabledApps] = await Promise.all([
+    prisma.zabbixHost.findMany({ where: { enabled: true } }),
+    prisma.webApp.findMany({ where: { enabled: true }, select: { id: true, name: true } }),
+  ]);
+
+  if (enabledHosts.length === 0 && enabledApps.length === 0) {
+    return { media: 100, breakdown: [] };
+  }
+
+  // Servidores Zabbix: erro propaga (caller decide fallback)
+  let serverBreakdown: HostBreakdownItem[] = [];
+  if (enabledHosts.length > 0) {
+    const results = await getAvailability(
+      enabledHosts.map((h) => h.hostId),
+      from,
+      until,
+    );
+    const byId = new Map(results.map((r) => [r.hostId, r.pct]));
+    serverBreakdown = enabledHosts.map((h) => ({
+      hostId: h.hostId,
+      name: h.name,
+      pct: byId.get(h.hostId) ?? 100,
+      type: "server" as const,
+    }));
+  }
+
+  // Aplicações monitoradas internamente: SLA via WebAppEvent
+  const appBreakdown: HostBreakdownItem[] = await Promise.all(
+    enabledApps.map(async (app) => ({
+      hostId: app.id,
+      name: app.name,
+      pct: await getWebAppSla(app.id, from, until),
+      type: "app" as const,
+    })),
   );
-  const byId = new Map(results.map((r) => [r.hostId, r.pct]));
-  const breakdown: HostBreakdownItem[] = enabledHosts.map((h) => ({
-    hostId: h.hostId,
-    name: h.name,
-    pct: byId.get(h.hostId) ?? 100,
-  }));
+
+  const breakdown = [...serverBreakdown, ...appBreakdown];
   const media =
     breakdown.length === 0
       ? 100

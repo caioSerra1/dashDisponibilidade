@@ -74,6 +74,44 @@ model ZabbixHost {
   lastSync  DateTime?
 }
 
+model WebApp {
+  id              String   @id @default(cuid())
+  name            String
+  url             String
+  enabled         Boolean  @default(true)
+  /// Timeout em ms pra considerar a request falha. Default 10s.
+  timeoutMs       Int      @default(10000)
+  /// Status HTTP que contam como "up". Aceita "2xx", "3xx", ou CSV "200,301,302".
+  expectStatus    String   @default("2xx")
+  lastCheckAt     DateTime?
+  lastStatusCode  Int?
+  lastResponseMs  Int?
+  lastError       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  events WebAppEvent[]
+
+  @@index([enabled])
+}
+
+model WebAppEvent {
+  id           String   @id @default(cuid())
+  webAppId     String
+  /// "down" quando a aplicação está fora; "up" quando voltou ao ar.
+  kind         String
+  startedAt    DateTime
+  /// null enquanto o estado vigora; preenchido na transição pra outro estado.
+  endedAt      DateTime?
+  statusCode   Int?
+  errorMessage String?
+
+  webApp WebApp @relation(fields: [webAppId], references: [id], onDelete: Cascade)
+
+  @@index([webAppId, startedAt])
+  @@index([webAppId, kind, endedAt])
+}
+
 model DailySnapshot {
   id                    String   @id @default(cuid())
   userId                String
