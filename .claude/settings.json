@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '{print $NF}')",
+      "Bash(grep -v \"^$\")",
+      "Bash(npx next:*)",
+      "Bash(npx vitest:*)",
+      "Bash(npm run:*)",
+      "Bash(echo \"EXIT=$?\")",
+      "Read(//tmp/**)",
+      "Bash(git stash:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(npx prisma:*)",
+      "Bash(git push:*)",
+      "mcp__playwright__browser_fill_form",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)",
+      "Bash(node -e ':*)"
+    ],
+    "additionalDirectories": [
+      "\\tmp",
+      "C:\\app\\dashDisponibilidade\\.claude\\skills",
+      "C:\\app\\dashDisponibilidade",
+      "c:\\app\\dashDisponibilidade"
+    ]
+  }
+}

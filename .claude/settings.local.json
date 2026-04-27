@@ -21,7 +21,8 @@
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/favicon.ico)",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/icon.svg)",
       "mcp__playwright__browser_type",
-      "Bash(taskkill //F //PID 47380)"
+      "Bash(taskkill //F //PID 47380)",
+      "Bash(xargs grep:*)"
     ]
   }
 }
