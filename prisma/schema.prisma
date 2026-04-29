@@ -98,7 +98,8 @@ model WebApp {
 model WebAppEvent {
   id           String   @id @default(cuid())
   webAppId     String
-  /// "down" quando a aplicação está fora; "up" quando voltou ao ar.
+  /// "down" quando a aplicação está fora; "up" quando voltou ao ar;
+  /// "monitor-gap" quando nosso check ficou offline e perdemos o sinal.
   kind         String
   startedAt    DateTime
   /// null enquanto o estado vigora; preenchido na transição pra outro estado.
@@ -110,6 +111,37 @@ model WebAppEvent {
 
   @@index([webAppId, startedAt])
   @@index([webAppId, kind, endedAt])
+}
+
+/// Espelho local de problemas do Zabbix por host. Garante histórico auditável
+/// independente da disponibilidade do Zabbix em runtime — se o Zabbix sair
+/// do ar, o cálculo de SLA continua a partir dos dados aqui.
+///
+/// Idempotência via `zabbixEventId` (unique por host): cada PROBLEM do Zabbix
+/// vira uma linha aqui, atualizada quando resolve (endedAt preenchido).
+model ServerEvent {
+  id              String   @id @default(cuid())
+  hostId          String
+  /// `eventid` do Zabbix (PROBLEM event) — usado pra idempotência.
+  zabbixEventId   String
+  /// "down" sempre nesse modelo. Mantemos o campo pra simetria com WebAppEvent
+  /// e pra computeAvailabilityFromEvents reutilizar a mesma função pura.
+  kind            String   @default("down")
+  startedAt       DateTime
+  /// null = problema ainda aberto no Zabbix; data = quando o OK fechou.
+  endedAt         DateTime?
+  /// 0..5 (Zabbix severities)
+  severity        Int
+  /// Nome da trigger que disparou o evento.
+  triggerName     String?
+  /// "icmpping", "agent.ping", ou outro key do item disparador.
+  itemKey         String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([hostId, zabbixEventId])
+  @@index([hostId, startedAt])
+  @@index([hostId, kind, endedAt])
 }
 
 model DailySnapshot {

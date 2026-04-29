@@ -176,6 +176,133 @@ export async function getAvailability(
   }
 }
 
+export interface ZabbixProblem {
+  zabbixEventId: string;
+  hostId: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  severity: number;
+  triggerName: string | null;
+  itemKey: string | null;
+}
+
+/**
+ * Busca todos os problemas (event.get value=1) do Zabbix relacionados aos
+ * itens de availability (icmpping/agent.ping) num período. Resolve o
+ * `r_eventid` em uma chamada batch pra preencher `endedAt`.
+ *
+ * Retorna problemas estruturados prontos pra serem persistidos em
+ * `ServerEvent` — só conta indisponibilidade real (item de ping caiu),
+ * não warnings transitórios de outras triggers.
+ */
+export async function listProblemsForHosts(
+  hostIds: readonly string[],
+  from: Date,
+  to: Date,
+): Promise<ZabbixProblem[]> {
+  if (hostIds.length === 0) return [];
+  const auth = await login();
+  try {
+    const fromTs = Math.floor(from.getTime() / 1000);
+    const toTs = Math.floor(to.getTime() / 1000);
+
+    // 1. Identificar item IDs de ping/availability dos hosts pra filtrar
+    //    triggers que envolvem esses items (não pegar disco cheio, etc).
+    const items = await rpc<Array<{
+      itemid: string;
+      hostid: string;
+      key_: string;
+      triggers?: Array<{ triggerid: string }>;
+    }>>(
+      "item.get",
+      {
+        hostids: hostIds,
+        search: { key_: "ping" },
+        searchByAny: true,
+        output: ["itemid", "hostid", "key_"],
+        selectTriggers: ["triggerid"],
+        monitored: true,
+      },
+      auth,
+    );
+
+    const triggerToHost = new Map<string, { hostId: string; itemKey: string }>();
+    for (const item of items) {
+      for (const t of item.triggers ?? []) {
+        triggerToHost.set(t.triggerid, { hostId: item.hostid, itemKey: item.key_ });
+      }
+    }
+    const triggerIds = Array.from(triggerToHost.keys());
+    if (triggerIds.length === 0) return [];
+
+    // 2. Eventos PROBLEM dessas triggers no período.
+    const problems = await rpc<Array<{
+      eventid: string;
+      objectid: string; // triggerid
+      clock: string;
+      r_eventid?: string;
+      severity: string;
+      name?: string;
+    }>>(
+      "event.get",
+      {
+        objectids: triggerIds,
+        time_from: fromTs,
+        time_till: toTs,
+        source: 0,
+        object: 0,
+        value: 1,
+        output: ["eventid", "objectid", "clock", "r_eventid", "severity", "name"],
+        sortfield: ["clock"],
+        sortorder: "ASC",
+      },
+      auth,
+    );
+
+    // 3. Resolve clock dos OK events (pra preencher endedAt).
+    const resolutionIds = Array.from(
+      new Set(
+        problems
+          .map((p) => p.r_eventid)
+          .filter((id): id is string => id != null && id !== "0"),
+      ),
+    );
+    const resolutions =
+      resolutionIds.length > 0
+        ? await rpc<Array<{ eventid: string; clock: string }>>(
+            "event.get",
+            { eventids: resolutionIds, output: ["eventid", "clock"] },
+            auth,
+          )
+        : [];
+    const resolutionClock = new Map(
+      resolutions.map((r) => [r.eventid, Number(r.clock)]),
+    );
+
+    return problems
+      .map((p): ZabbixProblem | null => {
+        const meta = triggerToHost.get(p.objectid);
+        if (!meta) return null;
+        const endedTs =
+          p.r_eventid && p.r_eventid !== "0"
+            ? resolutionClock.get(p.r_eventid) ?? null
+            : null;
+        return {
+          zabbixEventId: p.eventid,
+          hostId: meta.hostId,
+          startedAt: new Date(Number(p.clock) * 1000),
+          endedAt: endedTs != null ? new Date(endedTs * 1000) : null,
+          severity: Number(p.severity),
+          triggerName: p.name ?? null,
+          itemKey: meta.itemKey,
+        };
+      })
+      .filter((p): p is ZabbixProblem => p != null);
+  } finally {
+    await logout(auth);
+  }
+}
+
 export async function testZabbix(): Promise<{ ok: boolean; message: string }> {
   try {
     const auth = await login();

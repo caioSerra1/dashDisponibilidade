@@ -8,8 +8,8 @@ import {
   countReturnsToExecution,
   computeExecutionMinutes,
 } from "./clickup";
-import { getAvailability, listHosts } from "./zabbix";
-import { getWebAppSla } from "./web-monitor";
+import { getAvailability, listHosts, listProblemsForHosts } from "./zabbix";
+import { getWebAppSla, getServerSla } from "./web-monitor";
 import { computePartial } from "./calculate";
 import { computeTaskMetrics, type RichTask, type TaskMetrics } from "./metrics";
 import { evaluateGoals } from "./goals";
@@ -106,22 +106,17 @@ async function computeSlaMedio(
     return { media: 100, breakdown: [] };
   }
 
-  // Servidores Zabbix: erro propaga (caller decide fallback)
-  let serverBreakdown: HostBreakdownItem[] = [];
-  if (enabledHosts.length > 0) {
-    const results = await getAvailability(
-      enabledHosts.map((h) => h.hostId),
-      from,
-      until,
-    );
-    const byId = new Map(results.map((r) => [r.hostId, r.pct]));
-    serverBreakdown = enabledHosts.map((h) => ({
+  // Servidores: SLA calculado a partir do espelho local (ServerEvent),
+  // populado pelo runZabbixSync. Independe da disponibilidade do Zabbix
+  // em runtime — se Zabbix sair do ar, ainda temos histórico local.
+  const serverBreakdown: HostBreakdownItem[] = await Promise.all(
+    enabledHosts.map(async (h) => ({
       hostId: h.hostId,
       name: h.name,
-      pct: byId.get(h.hostId) ?? 100,
+      pct: await getServerSla(h.hostId, from, until),
       type: "server" as const,
-    }));
-  }
+    })),
+  );
 
   // Aplicações monitoradas internamente: SLA via WebAppEvent
   const appBreakdown: HostBreakdownItem[] = await Promise.all(
@@ -146,6 +141,64 @@ function startOfUtcDay(d: Date): Date {
 }
 
 /**
+ * Espelha problemas do Zabbix dos hosts habilitados pra `ServerEvent` local.
+ * Idempotente via unique(hostId, zabbixEventId) — re-rodar não duplica.
+ *
+ * Cobre o período [from, until). Pega problemas que abriram dentro do
+ * período OU continuam abertos. Atualiza endedAt quando o problema resolve
+ * no Zabbix.
+ */
+async function mirrorZabbixProblems(
+  from: Date,
+  until: Date,
+): Promise<{ created: number; updated: number }> {
+  const enabledHosts = await prisma.zabbixHost.findMany({
+    where: { enabled: true },
+    select: { hostId: true },
+  });
+  if (enabledHosts.length === 0) return { created: 0, updated: 0 };
+
+  const problems = await listProblemsForHosts(
+    enabledHosts.map((h) => h.hostId),
+    from,
+    until,
+  );
+
+  let created = 0;
+  let updated = 0;
+  for (const p of problems) {
+    const existing = await prisma.serverEvent.findUnique({
+      where: { hostId_zabbixEventId: { hostId: p.hostId, zabbixEventId: p.zabbixEventId } },
+    });
+    if (existing) {
+      // Atualiza apenas se endedAt mudou (problema foi resolvido).
+      if (existing.endedAt?.getTime() !== p.endedAt?.getTime()) {
+        await prisma.serverEvent.update({
+          where: { id: existing.id },
+          data: { endedAt: p.endedAt },
+        });
+        updated += 1;
+      }
+    } else {
+      await prisma.serverEvent.create({
+        data: {
+          hostId: p.hostId,
+          zabbixEventId: p.zabbixEventId,
+          kind: "down",
+          startedAt: p.startedAt,
+          endedAt: p.endedAt,
+          severity: p.severity,
+          triggerName: p.triggerName,
+          itemKey: p.itemKey,
+        },
+      });
+      created += 1;
+    }
+  }
+  return { created, updated };
+}
+
+/**
  * Job leve dedicado a Zabbix: busca disponibilidade atual do mês e atualiza
  * o slaMedioMes + valorDisponibilidade no DailySnapshot de HOJE de todos os
  * users ativos. Não toca ClickUp (rápido, ~2s vs ~30s do runDaily).
@@ -167,9 +220,19 @@ export async function runZabbixSync(now: Date = new Date()): Promise<{ updated: 
       console.error("[zabbix-sync] syncZabbixHosts falhou", (e as Error).message);
     }
 
-    // 2. Busca disponibilidade real do mês até agora.
+    // 2. Espelha problemas do Zabbix (eventos PROBLEM/OK das triggers de
+    //    ping) em ServerEvent local. Garante histórico auditável e cálculo
+    //    de SLA independente do Zabbix em runtime.
+    //    Janela ampla (90 dias) pra capturar problemas que abriram antes do
+    //    período corrente mas continuam abertos.
+    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 3600 * 1000);
+    const mirror = await mirrorZabbixProblems(ninetyDaysAgo, now);
+
+    // 3. Busca disponibilidade do mês a partir do DB local.
     const config = await loadConfig();
     const tiers = await loadTiers();
+    const { from: monthFrom } = monthRange(year, month);
+    void monthFrom; // computeSlaMedio refaz isso; manter pra clareza
     const { media: slaMedio, breakdown } = await computeSlaMedio(year, month, now);
 
     // 3. Atualiza DailySnapshot de hoje pra cada user (recalcula valorDisponibilidade
@@ -203,7 +266,7 @@ export async function runZabbixSync(now: Date = new Date()): Promise<{ updated: 
       where: { id: run.id },
       data: {
         finishedAt: new Date(),
-        message: `sla=${slaMedio.toFixed(2)}% updated=${updated}`,
+        message: `sla=${slaMedio.toFixed(2)}% updated=${updated} mirror=${mirror.created}+${mirror.updated}`,
       },
     });
     return { updated, sla: slaMedio };

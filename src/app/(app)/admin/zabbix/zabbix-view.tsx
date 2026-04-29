@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { RefreshCw, Plus, Trash2, ExternalLink } from "lucide-react";
+import { RefreshCw, Plus, Trash2, ExternalLink, History, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -28,6 +28,25 @@ interface WebApp {
   slaMonthPct: number | null;
 }
 
+interface AvailabilityEvent {
+  id: string;
+  kind: string;
+  startedAt: string;
+  endedAt: string | null;
+  statusCode?: number | null;
+  errorMessage?: string | null;
+  triggerName?: string | null;
+  severity?: number;
+  durationMinutes: number;
+  ongoing: boolean;
+}
+
+interface EventsModalState {
+  type: "server" | "app";
+  id: string;
+  name: string;
+}
+
 export function ZabbixView() {
   const [hosts, setHosts] = useState<Host[]>([]);
   const [apps, setApps] = useState<WebApp[]>([]);
@@ -35,6 +54,14 @@ export function ZabbixView() {
   const [checking, setChecking] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [appMsg, setAppMsg] = useState<string | null>(null);
+  const [eventsModal, setEventsModal] = useState<EventsModalState | null>(null);
+  const [eventsData, setEventsData] = useState<{
+    slaPct: number;
+    totalDownMinutes: number;
+    eventCount: number;
+    events: AvailabilityEvent[];
+  } | null>(null);
+  const [eventsLoading, setEventsLoading] = useState(false);
 
   // form
   const [newName, setNewName] = useState("");
@@ -119,6 +146,25 @@ export function ZabbixView() {
     await reloadApps();
   }
 
+  async function openEvents(target: EventsModalState) {
+    setEventsModal(target);
+    setEventsData(null);
+    setEventsLoading(true);
+    try {
+      const r = await fetch(
+        `/api/admin/availability/events?type=${target.type}&id=${encodeURIComponent(target.id)}`,
+      ).then((x) => x.json());
+      setEventsData(r);
+    } finally {
+      setEventsLoading(false);
+    }
+  }
+
+  function closeEvents() {
+    setEventsModal(null);
+    setEventsData(null);
+  }
+
   return (
     <div className="space-y-6">
       <Card>
@@ -142,7 +188,8 @@ export function ZabbixView() {
                   <th className="py-2">Servidor</th>
                   <th className="py-2">ID</th>
                   <th className="py-2">Última sinc.</th>
-                  <th className="py-2 text-right">Habilitado</th>
+                  <th className="py-2">Habilitado</th>
+                  <th className="py-2 text-right"></th>
                 </tr>
               </thead>
               <tbody>
@@ -151,8 +198,19 @@ export function ZabbixView() {
                     <td className="py-2">{h.name}</td>
                     <td className="py-2 text-muted-foreground">{h.hostId}</td>
                     <td className="py-2">{h.lastSync ? formatDate(h.lastSync) : "—"}</td>
-                    <td className="py-2 text-right">
+                    <td className="py-2">
                       <Switch checked={h.enabled} onCheckedChange={(v) => toggle(h.hostId, v)} />
+                    </td>
+                    <td className="py-2 text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEvents({ type: "server", id: h.hostId, name: h.name })}
+                        aria-label="Ver incidentes"
+                        title="Ver incidentes do mês"
+                      >
+                        <History className="h-4 w-4" />
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -262,6 +320,15 @@ export function ZabbixView() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => openEvents({ type: "app", id: a.id, name: a.name })}
+                          aria-label="Ver incidentes"
+                          title="Ver incidentes do mês"
+                        >
+                          <History className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => deleteApp(a.id)}
                           aria-label="Excluir"
                         >
@@ -276,6 +343,102 @@ export function ZabbixView() {
           )}
         </CardContent>
       </Card>
+
+      {eventsModal && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={closeEvents}
+        >
+          <div
+            className="bg-card rounded-lg shadow-lg max-w-3xl w-full max-h-[80vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="font-semibold">Incidentes — {eventsModal.name}</h3>
+                <p className="text-xs text-muted-foreground">Mês corrente</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={closeEvents} aria-label="Fechar">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="overflow-auto p-4">
+              {eventsLoading ? (
+                <p className="text-sm text-muted-foreground">Carregando…</p>
+              ) : !eventsData ? (
+                <p className="text-sm text-red-500">Falha ao carregar.</p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">SLA</div>
+                      <div className="text-lg font-semibold tabular-nums">
+                        {eventsData.slaPct.toFixed(2)}%
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Tempo fora</div>
+                      <div className="text-lg font-semibold tabular-nums">
+                        {eventsData.totalDownMinutes}min
+                      </div>
+                    </div>
+                    <div className="rounded-md border p-3">
+                      <div className="text-xs text-muted-foreground">Eventos</div>
+                      <div className="text-lg font-semibold tabular-nums">
+                        {eventsData.eventCount}
+                      </div>
+                    </div>
+                  </div>
+                  {eventsData.events.length === 0 ? (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      Nenhum incidente no período. 🎉
+                    </p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-muted-foreground">
+                        <tr>
+                          <th className="py-2">Início</th>
+                          <th className="py-2">Fim</th>
+                          <th className="py-2">Duração</th>
+                          <th className="py-2">Detalhe</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {eventsData.events.map((e) => (
+                          <tr key={e.id} className="border-t align-top">
+                            <td className="py-2 tabular-nums whitespace-nowrap">
+                              {formatDate(e.startedAt)}
+                            </td>
+                            <td className="py-2 tabular-nums whitespace-nowrap">
+                              {e.ongoing ? (
+                                <span className="text-red-500 font-medium">em andamento</span>
+                              ) : e.endedAt ? (
+                                formatDate(e.endedAt)
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="py-2 tabular-nums">{e.durationMinutes}min</td>
+                            <td className="py-2 text-xs text-muted-foreground">
+                              {e.kind === "monitor-gap" && (
+                                <span className="text-amber-600">monitor offline · </span>
+                              )}
+                              {e.statusCode != null && <span>HTTP {e.statusCode}</span>}
+                              {e.severity != null && <span>severidade {e.severity}</span>}
+                              {e.triggerName && <span> · {e.triggerName}</span>}
+                              {e.errorMessage && <span> · {e.errorMessage}</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

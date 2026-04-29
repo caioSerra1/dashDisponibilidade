@@ -1,22 +1,22 @@
 import { prisma } from "./db";
 
-export interface WebAppEventInterval {
+export interface DowntimeInterval {
   kind: string;
   startedAt: Date;
   endedAt: Date | null;
 }
 
 /**
- * Calcula a porcentagem de disponibilidade ("SLA") de uma aplicação no
- * período [from, to), a partir dos eventos `down` que se sobrepõem ao
- * intervalo. Eventos ainda abertos (endedAt == null) contam até `to`.
+ * Calcula porcentagem de disponibilidade no período [from, to) a partir
+ * de uma lista de intervalos de "down". Compartilhada entre WebApp (URLs)
+ * e ServerEvent (Zabbix mirror) — toda métrica de disponibilidade passa
+ * por essa função pura.
  *
- * Função pura — não toca em Prisma. Recebe a lista pronta pra facilitar
- * testes e reutilização. Eventos `up` são descartados (servem só pra marcar
- * transição na timeline).
+ * Eventos com `kind != "down"` são ignorados (up/monitor-gap servem só
+ * pra marcar transição). Eventos abertos (endedAt = null) contam até `to`.
  */
-export function computeWebAppSla(
-  events: readonly WebAppEventInterval[],
+export function computeAvailabilityFromEvents(
+  events: readonly DowntimeInterval[],
   from: Date,
   to: Date,
 ): number {
@@ -37,8 +37,15 @@ export function computeWebAppSla(
   return Math.max(0, Math.min(100, Math.round(pct * 100) / 100));
 }
 
+/** @deprecated Use `computeAvailabilityFromEvents`. Mantido pra compat. */
+export const computeWebAppSla = computeAvailabilityFromEvents;
+/** @deprecated Use `DowntimeInterval`. Mantido pra compat. */
+export type WebAppEventInterval = DowntimeInterval;
+
 /**
- * Busca SLA de uma WebApp no período via Prisma. Wrapper sobre `computeWebAppSla`.
+ * Busca SLA de uma WebApp no período via Prisma. Conta eventos `down` E
+ * `monitor-gap` (gap = nosso check ficou offline, sem como medir → conta
+ * como down pessimisticamente pra não inflar SLA).
  */
 export async function getWebAppSla(
   webAppId: string,
@@ -48,16 +55,36 @@ export async function getWebAppSla(
   const events = await prisma.webAppEvent.findMany({
     where: {
       webAppId,
-      kind: "down",
-      OR: [
-        { endedAt: null },
-        { endedAt: { gte: from } },
-      ],
+      kind: { in: ["down", "monitor-gap"] },
+      OR: [{ endedAt: null }, { endedAt: { gte: from } }],
       startedAt: { lt: to },
     },
     select: { kind: true, startedAt: true, endedAt: true },
   });
-  return computeWebAppSla(events, from, to);
+  // Trata monitor-gap como down pra cálculo (pessimista, mas honesto).
+  const normalized = events.map((e) => ({ ...e, kind: "down" }));
+  return computeAvailabilityFromEvents(normalized, from, to);
+}
+
+/**
+ * SLA de um host Zabbix lendo do espelho local `ServerEvent`. Independe
+ * da disponibilidade do Zabbix em runtime.
+ */
+export async function getServerSla(
+  hostId: string,
+  from: Date,
+  to: Date,
+): Promise<number> {
+  const events = await prisma.serverEvent.findMany({
+    where: {
+      hostId,
+      kind: "down",
+      OR: [{ endedAt: null }, { endedAt: { gte: from } }],
+      startedAt: { lt: to },
+    },
+    select: { kind: true, startedAt: true, endedAt: true },
+  });
+  return computeAvailabilityFromEvents(events, from, to);
 }
 
 /**
@@ -134,6 +161,38 @@ export async function runWebMonitorCheck(): Promise<{ checked: number; downNow: 
 
     let checked = 0;
     let downNow = 0;
+    let gapsCreated = 0;
+    const now = new Date();
+    // Se nosso check ficou silencioso por mais que isso, registramos um
+    // monitor-gap pra esse intervalo (não temos como saber o que aconteceu).
+    const GAP_THRESHOLD_MS = 10 * 60 * 1000; // 10 min
+
+    // 1. Detecta gaps de monitoramento ANTES dos checks novos: pra cada app,
+    //    se o lastCheckAt foi há mais que GAP_THRESHOLD, abre um evento
+    //    monitor-gap cobrindo o intervalo. Isso é pessimista propositalmente
+    //    (gap = down) pra não inflar SLA quando perdemos sinal.
+    for (const app of apps) {
+      if (!app.lastCheckAt) continue;
+      const gapMs = now.getTime() - app.lastCheckAt.getTime();
+      if (gapMs <= GAP_THRESHOLD_MS) continue;
+
+      // Evita duplicar se já existe um gap aberto começando perto desse momento.
+      const existingGap = await prisma.webAppEvent.findFirst({
+        where: { webAppId: app.id, kind: "monitor-gap", startedAt: app.lastCheckAt },
+      });
+      if (existingGap) continue;
+
+      await prisma.webAppEvent.create({
+        data: {
+          webAppId: app.id,
+          kind: "monitor-gap",
+          startedAt: app.lastCheckAt,
+          endedAt: now,
+          errorMessage: `monitor offline por ${Math.round(gapMs / 60000)}min`,
+        },
+      });
+      gapsCreated += 1;
+    }
 
     for (let i = 0; i < apps.length; i += BATCH_SIZE) {
       const batch = apps.slice(i, i + BATCH_SIZE);
@@ -187,9 +246,12 @@ export async function runWebMonitorCheck(): Promise<{ checked: number; downNow: 
       }
     }
 
+    const msg = gapsCreated > 0
+      ? `checked=${checked} down=${downNow} gaps=${gapsCreated}`
+      : `checked=${checked} down=${downNow}`;
     await prisma.jobRun.update({
       where: { id: run.id },
-      data: { finishedAt: new Date(), message: `checked=${checked} down=${downNow}` },
+      data: { finishedAt: new Date(), message: msg },
     });
     return { checked, downNow };
   } catch (e) {
