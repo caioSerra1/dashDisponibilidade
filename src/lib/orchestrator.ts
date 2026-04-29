@@ -85,7 +85,12 @@ async function decorateWithExecutionStart(
 export interface HostBreakdownItem {
   hostId: string;
   name: string;
-  pct: number;
+  /**
+   * `null` = sem dados suficientes pra medir (host recém-cadastrado,
+   * sem item de ping, RPC falhou). Esses são EXCLUÍDOS da média —
+   * nunca preenchemos com 100% fake.
+   */
+  pct: number | null;
   /** "server" = host Zabbix; "app" = URL monitorada internamente. */
   type?: "server" | "app";
 }
@@ -102,13 +107,15 @@ async function computeSlaMedio(
     prisma.webApp.findMany({ where: { enabled: true }, select: { id: true, name: true } }),
   ]);
 
+  // Sem nenhum target habilitado: usa 100% como neutro (admin optou por não
+  // medir disponibilidade). Não é "fake" — é configuração explícita.
   if (enabledHosts.length === 0 && enabledApps.length === 0) {
     return { media: 100, breakdown: [] };
   }
 
-  // Servidores: SLA calculado a partir do espelho local (ServerEvent),
-  // populado pelo runZabbixSync. Independe da disponibilidade do Zabbix
-  // em runtime — se Zabbix sair do ar, ainda temos histórico local.
+  // Servidores: SLA do espelho local. ServerEvent só existe pra incidentes —
+  // ausência de eventos = host esteve up 100% do tempo (verdade auditável,
+  // não fake — é só interpretação correta da ausência de problemas).
   const serverBreakdown: HostBreakdownItem[] = await Promise.all(
     enabledHosts.map(async (h) => ({
       hostId: h.hostId,
@@ -129,10 +136,15 @@ async function computeSlaMedio(
   );
 
   const breakdown = [...serverBreakdown, ...appBreakdown];
+  // Exclui targets sem dados (pct=null) da média. Documentado explicitamente:
+  // não inflamos SLA preenchendo lacuna com 100%.
+  const measurable = breakdown.filter(
+    (b): b is HostBreakdownItem & { pct: number } => b.pct != null,
+  );
   const media =
-    breakdown.length === 0
+    measurable.length === 0
       ? 100
-      : breakdown.reduce((acc, r) => acc + r.pct, 0) / breakdown.length;
+      : measurable.reduce((acc, r) => acc + r.pct, 0) / measurable.length;
   return { media, breakdown };
 }
 

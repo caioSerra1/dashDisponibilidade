@@ -68,7 +68,12 @@ export async function listHosts(): Promise<ZabbixHostInfo[]> {
 
 export interface HostAvailability {
   hostId: string;
-  pct: number;
+  /**
+   * Porcentagem de disponibilidade no período. `null` quando não temos
+   * dados pra medir (host sem item de ping, history vazia, RPC falhou).
+   * Caller deve EXCLUIR null da média — nunca assumir 100% pra preencher.
+   */
+  pct: number | null;
 }
 
 /**
@@ -135,8 +140,9 @@ export async function getAvailability(
       });
     }
 
-    // 2. Pra cada host com item, busca histórico do período.
-    //    history=3 = unsigned int (icmpping), history=0 = float (agent.ping retorna 1.0 ou 0.0).
+    // 2. Pra cada host com item, busca histórico do período. Se history
+    //    estiver vazio ou RPC falhar, retorna `null` (sem dados — caller
+    //    decide o que fazer; NUNCA preenchemos com 100% fake).
     const results = await Promise.all(
       Array.from(itemByHost.entries()).map(async ([hostid, info]) => {
         try {
@@ -151,25 +157,28 @@ export async function getAvailability(
             },
             auth,
           );
-          if (history.length === 0) return { hostid, pct: 100 };
+          if (history.length === 0) {
+            console.warn(`[zabbix] history vazia pra hostid=${hostid}`);
+            return { hostid, pct: null as number | null };
+          }
           const sum = history.reduce((acc, h) => acc + Number(h.value), 0);
           const pct = (sum / history.length) * 100;
           return {
             hostid,
-            pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)),
+            pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,
           };
         } catch (e) {
           console.error(`[zabbix] history.get falhou pra ${hostid}`, (e as Error).message);
-          return { hostid, pct: 100 };
+          return { hostid, pct: null as number | null };
         }
       }),
     );
 
-    // 3. Pra hosts sem item de ping disponível, retorna 100% (não tem como medir).
+    // 3. Hosts sem item de ping disponível: também null (sem como medir).
     const byHost = new Map(results.map((r) => [r.hostid, r.pct]));
     return hostIds.map((hostId) => ({
       hostId,
-      pct: byHost.get(hostId) ?? 100,
+      pct: byHost.has(hostId) ? byHost.get(hostId)! : null,
     }));
   } finally {
     await logout(auth);

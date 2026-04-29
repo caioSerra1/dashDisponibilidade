@@ -311,7 +311,11 @@ export function ZabbixView() {
                         )}
                       </td>
                       <td className="py-2 tabular-nums">
-                        {a.slaMonthPct != null ? `${a.slaMonthPct.toFixed(2)}%` : "—"}
+                        {a.slaMonthPct != null ? (
+                          `${a.slaMonthPct.toFixed(2)}%`
+                        ) : (
+                          <span className="text-xs text-muted-foreground" title="Ainda sem medições — excluído da média">sem dados</span>
+                        )}
                       </td>
                       <td className="py-2">
                         <Switch checked={a.enabled} onCheckedChange={(v) => toggleApp(a.id, v)} />

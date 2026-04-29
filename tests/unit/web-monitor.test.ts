@@ -181,6 +181,14 @@ describe("computeAvailabilityFromEvents — cenários críticos pra cálculo de 
     const sla = computeAvailabilityFromEvents([], start, end);
     expect(sla).toBe(100);
   });
+
+  it("ausência de eventos = 100% legítimo (não é dado fake)", () => {
+    // Importante pra auditoria: não confundir "sem incidentes registrados"
+    // com "sem medição". Quando um host está enabled e o mirror rodou,
+    // ausência de eventos é prova de uptime — não preenchemos lacuna.
+    const sla = computeAvailabilityFromEvents([], from, to);
+    expect(sla).toBe(100);
+  });
 });
 
 describe("matchExpectStatus", () => {
