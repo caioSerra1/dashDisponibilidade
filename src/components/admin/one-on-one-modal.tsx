@@ -144,7 +144,7 @@ export function OneOnOneModal({
               <Stat label="Pontos (dev)" value={String(member.pontosDev)} />
               <Stat label="Tasks dev" value={String(member.tasksDev)} />
               <Stat label="Tasks suporte" value={String(member.tasksSuporte)} />
-              <Stat label="SLA médio" value={`${member.slaAvg.toFixed(1)}%`} />
+              <Stat label="SLA médio" value={`${member.slaAvg.toFixed(2)}%`} />
               <Stat
                 label="MTTR"
                 value={member.mttrHoras != null ? `${member.mttrHoras.toFixed(1)}h` : "—"}

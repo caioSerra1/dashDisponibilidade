@@ -304,7 +304,7 @@ function TeamKpis({
       <KpiCard
         sigla="SLA"
         nome="Disponibilidade média acordada"
-        value={`${kpis.slaMedio.toFixed(1)}%`}
+        value={`${kpis.slaMedio.toFixed(2)}%`}
       />
       <KpiCard
         sigla="MTTR"
@@ -391,7 +391,7 @@ function DestaqueEvolucao({
                 <Badge variant="success">+{delta.tasksDev} tasks</Badge>
               )}
               {delta.slaAvg >= 0.1 && (
-                <Badge variant="success">SLA +{delta.slaAvg.toFixed(1)}pp</Badge>
+                <Badge variant="success">SLA +{delta.slaAvg.toFixed(2)}pp</Badge>
               )}
               {delta.avgResolutionHours != null && delta.avgResolutionHours < 0 && (
                 <Badge variant="success">
@@ -463,7 +463,7 @@ function MemberCardBlock({
             label="MTTA"
             value={member.mttaHoras != null ? `${member.mttaHoras.toFixed(0)}h` : "—"}
           />
-          <MiniStat label="SLA" value={`${member.slaAvg.toFixed(1)}%`} />
+          <MiniStat label="SLA" value={`${member.slaAvg.toFixed(2)}%`} />
           <MiniStat label="Retornos" value={String(member.retornosExecucao)} />
         </div>
 
