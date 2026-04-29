@@ -18,12 +18,12 @@ function ev(
   return { kind, startedAt, endedAt };
 }
 
-// Garante que aliases legados continuam funcionando
+// Garante que aliases legados continuam funcionando (typecheck-only, não chamado).
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _legacyAlias: typeof computeAvailabilityFromEvents = computeWebAppSla;
-void _legacyAlias;
 type _LegacyType = WebAppEventInterval;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _legacyType: _LegacyType = { kind: "down", startedAt: new Date(), endedAt: null };
-void _legacyType;
 
 describe("computeWebAppSla", () => {
   const from = new Date("2026-04-01T00:00:00Z");

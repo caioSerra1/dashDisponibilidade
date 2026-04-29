@@ -228,11 +228,9 @@ export async function runZabbixSync(now: Date = new Date()): Promise<{ updated: 
     const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 3600 * 1000);
     const mirror = await mirrorZabbixProblems(ninetyDaysAgo, now);
 
-    // 3. Busca disponibilidade do mês a partir do DB local.
+    // 3. Busca disponibilidade do mês a partir do DB local (ServerEvent).
     const config = await loadConfig();
     const tiers = await loadTiers();
-    const { from: monthFrom } = monthRange(year, month);
-    void monthFrom; // computeSlaMedio refaz isso; manter pra clareza
     const { media: slaMedio, breakdown } = await computeSlaMedio(year, month, now);
 
     // 3. Atualiza DailySnapshot de hoje pra cada user (recalcula valorDisponibilidade
