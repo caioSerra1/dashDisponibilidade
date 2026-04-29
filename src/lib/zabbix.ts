@@ -71,6 +71,18 @@ export interface HostAvailability {
   pct: number;
 }
 
+/**
+ * Keys de items que indicam "host respondendo" no Zabbix. Por host pegamos
+ * o primeiro disponível dessa lista, na ordem.
+ *
+ * - `icmpping` retorna 1 quando o host responde ao ping ICMP, 0 quando não.
+ * - `agent.ping` é o equivalente via Zabbix Agent.
+ *
+ * O dashboard nativo do Zabbix calcula "Disponibilidade %" via avg() do
+ * mesmo item — replicamos exatamente essa lógica aqui.
+ */
+const AVAILABILITY_ITEM_KEYS = ["icmpping", "agent.ping"];
+
 export async function getAvailability(
   hostIds: readonly string[],
   from: Date,
@@ -81,84 +93,84 @@ export async function getAvailability(
   try {
     const fromTs = Math.floor(from.getTime() / 1000);
     const toTs = Math.floor(to.getTime() / 1000);
-    const totalSeconds = Math.max(1, toTs - fromTs);
 
-    // Estratégia: contar tempo real em "host down" via eventos no período.
-    // service.getsla foi removido do Zabbix 6+, então calculamos direto:
-    //   SLA% = 100 - (tempo_total_em_problema / período_total) * 100
-    // Considera triggers de severidade "high" ou "disaster" pra evitar
-    // contar warnings transitórios como indisponibilidade.
-    //
-    // Usa `event.get` (não `problem.get`) porque só `event.get` aceita
-    // `selectHosts` — `problem.get` retorna 'Invalid parameter selectHosts'.
-    const problems = await rpc<Array<{
-      eventid: string;
-      hosts: Array<{ hostid: string }>;
-      clock: string;
-      r_eventid?: string;
-      value: string;
+    // 1. Busca itens de ping/agent ping pra cada host. Cada host pode ter
+    //    mais de um item — pegamos o primeiro na ordem de preferência.
+    const items = await rpc<Array<{
+      itemid: string;
+      hostid: string;
+      key_: string;
+      value_type: string;
     }>>(
-      "event.get",
+      "item.get",
       {
-        time_from: fromTs,
-        time_till: toTs,
         hostids: hostIds,
-        source: 0, // trigger
-        object: 0, // trigger
-        value: 1, // PROBLEM
-        severities: [4, 5], // high + disaster
-        selectHosts: ["hostid"],
-        sortfield: ["clock"],
-        sortorder: "ASC",
+        search: { key_: "ping" },
+        searchByAny: true,
+        output: ["itemid", "hostid", "key_", "value_type"],
+        monitored: true,
       },
       auth,
     );
 
-    // Cada PROBLEM (value=1) tem r_eventid apontando pro OK que o resolveu.
-    // Buscamos o clock desses OK events em uma chamada batch.
-    const resolutionIds = Array.from(
-      new Set(
-        problems
-          .map((p) => p.r_eventid)
-          .filter((id): id is string => id != null && id !== "0"),
-      ),
-    );
-    const resolutions =
-      resolutionIds.length > 0
-        ? await rpc<Array<{ eventid: string; clock: string }>>(
-            "event.get",
-            {
-              eventids: resolutionIds,
-              output: ["eventid", "clock"],
-            },
-            auth,
-          )
-        : [];
-    const resolutionClock = new Map(
-      resolutions.map((r) => [r.eventid, Number(r.clock)]),
-    );
-
-    // Soma duração de cada problema por host. Problemas sem r_eventid
-    // (ainda abertos) contam até `to`.
-    const downSecondsByHost = new Map<string, number>();
-    for (const ev of problems) {
-      const start = Math.max(Number(ev.clock), fromTs);
-      const resolvedAt =
-        ev.r_eventid && ev.r_eventid !== "0"
-          ? resolutionClock.get(ev.r_eventid) ?? toTs
-          : toTs;
-      const end = Math.min(resolvedAt, toTs);
-      const duration = Math.max(0, end - start);
-      for (const h of ev.hosts ?? []) {
-        downSecondsByHost.set(h.hostid, (downSecondsByHost.get(h.hostid) ?? 0) + duration);
+    // Escolhe o melhor item por host (icmpping > agent.ping > qualquer outro com "ping")
+    const itemByHost = new Map<string, { itemid: string; valueType: number }>();
+    for (const key of AVAILABILITY_ITEM_KEYS) {
+      for (const item of items) {
+        if (itemByHost.has(item.hostid)) continue;
+        if (item.key_.startsWith(key)) {
+          itemByHost.set(item.hostid, {
+            itemid: item.itemid,
+            valueType: Number(item.value_type),
+          });
+        }
       }
     }
+    // Fallback: qualquer item com "ping" no nome
+    for (const item of items) {
+      if (itemByHost.has(item.hostid)) continue;
+      itemByHost.set(item.hostid, {
+        itemid: item.itemid,
+        valueType: Number(item.value_type),
+      });
+    }
 
-    return hostIds.map((hostId) => {
-      const down = downSecondsByHost.get(hostId) ?? 0;
-      const pct = Math.max(0, Math.min(100, ((totalSeconds - down) / totalSeconds) * 100));
-      return { hostId, pct: Math.round(pct * 100) / 100 };
-    });
+    // 2. Pra cada host com item, busca histórico do período.
+    //    history=3 = unsigned int (icmpping), history=0 = float (agent.ping retorna 1.0 ou 0.0).
+    const results = await Promise.all(
+      Array.from(itemByHost.entries()).map(async ([hostid, info]) => {
+        try {
+          const history = await rpc<Array<{ value: string }>>(
+            "history.get",
+            {
+              itemids: [info.itemid],
+              time_from: fromTs,
+              time_till: toTs,
+              history: info.valueType,
+              output: ["value"],
+            },
+            auth,
+          );
+          if (history.length === 0) return { hostid, pct: 100 };
+          const sum = history.reduce((acc, h) => acc + Number(h.value), 0);
+          const pct = (sum / history.length) * 100;
+          return {
+            hostid,
+            pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)),
+          };
+        } catch (e) {
+          console.error(`[zabbix] history.get falhou pra ${hostid}`, (e as Error).message);
+          return { hostid, pct: 100 };
+        }
+      }),
+    );
+
+    // 3. Pra hosts sem item de ping disponível, retorna 100% (não tem como medir).
+    const byHost = new Map(results.map((r) => [r.hostid, r.pct]));
+    return hostIds.map((hostId) => ({
+      hostId,
+      pct: byHost.get(hostId) ?? 100,
+    }));
   } finally {
     await logout(auth);
   }
