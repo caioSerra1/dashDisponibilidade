@@ -5,12 +5,18 @@ const DATETIME_BR = new Intl.DateTimeFormat("pt-BR", {
 });
 const MONTH_BR = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric" });
 
-export function formatDate(d: Date | string): string {
-  return DATE_BR.format(typeof d === "string" ? new Date(d) : d);
+export function formatDate(d: Date | string | null | undefined): string {
+  if (d == null || d === "") return "—";
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(date.getTime())) return "—";
+  return DATE_BR.format(date);
 }
 
-export function formatDateTime(d: Date | string): string {
-  return DATETIME_BR.format(typeof d === "string" ? new Date(d) : d);
+export function formatDateTime(d: Date | string | null | undefined): string {
+  if (d == null || d === "") return "—";
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(date.getTime())) return "—";
+  return DATETIME_BR.format(date);
 }
 
 export function formatMonth(year: number, month: number): string {

@@ -67,6 +67,7 @@ export function ZabbixView() {
   const [newName, setNewName] = useState("");
   const [newUrl, setNewUrl] = useState("");
   const [newExpect, setNewExpect] = useState("2xx");
+  const [newTimeoutSec, setNewTimeoutSec] = useState("10");
   const [creating, setCreating] = useState(false);
 
   async function reload() {
@@ -104,18 +105,25 @@ export function ZabbixView() {
 
   async function createApp() {
     if (!newName || !newUrl) return;
+    const timeoutMs = Math.max(1, Math.min(60, Number(newTimeoutSec) || 10)) * 1000;
     setCreating(true);
     setAppMsg(null);
     const r = await fetch("/api/admin/web-apps", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newName, url: newUrl, expectStatus: newExpect }),
+      body: JSON.stringify({
+        name: newName,
+        url: newUrl,
+        expectStatus: newExpect,
+        timeoutMs,
+      }),
     }).then((x) => x.json());
     setCreating(false);
     if (r.ok) {
       setNewName("");
       setNewUrl("");
       setNewExpect("2xx");
+      setNewTimeoutSec("10");
       await reloadApps();
     } else {
       setAppMsg(`Erro ao criar: ${typeof r.error === "string" ? r.error : "validação falhou"}`);
@@ -229,27 +237,69 @@ export function ZabbixView() {
           </Button>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-2 md:grid-cols-[1fr_2fr_auto_auto] mb-4">
-            <Input
-              placeholder="Nome (ex.: Portal Cursos)"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-            />
-            <Input
-              placeholder="https://exemplo.com"
-              value={newUrl}
-              onChange={(e) => setNewUrl(e.target.value)}
-            />
-            <Input
-              placeholder="2xx"
-              className="w-24"
-              value={newExpect}
-              onChange={(e) => setNewExpect(e.target.value)}
-              title="Status esperado: 2xx, 3xx, 200,301,302..."
-            />
+          <div className="rounded-md border bg-muted/30 p-3 mb-4 space-y-3">
+            <p className="text-xs font-semibold uppercase text-muted-foreground">
+              Adicionar nova aplicação
+            </p>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  Nome
+                </label>
+                <Input
+                  placeholder="Ex.: Portal Cursos"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  URL completa (https://...)
+                </label>
+                <Input
+                  placeholder="https://exemplo.com"
+                  value={newUrl}
+                  onChange={(e) => setNewUrl(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  Resposta HTTP esperada
+                </label>
+                <select
+                  value={newExpect}
+                  onChange={(e) => setNewExpect(e.target.value)}
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="2xx">2xx — Qualquer sucesso (200, 201, 204…)</option>
+                  <option value="2xx,3xx">2xx ou 3xx — Sucesso ou redirecionamento</option>
+                  <option value="200">Apenas 200 OK exato</option>
+                  <option value="200,301,302">200, 301 ou 302</option>
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Códigos HTTP que indicam que o site está no ar. Default: qualquer 2xx.
+                </p>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  Timeout (segundos)
+                </label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="60"
+                  placeholder="10"
+                  value={newTimeoutSec}
+                  onChange={(e) => setNewTimeoutSec(e.target.value)}
+                />
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Quanto esperar pela resposta antes de marcar como fora do ar.
+                </p>
+              </div>
+            </div>
             <Button onClick={createApp} disabled={creating || !newName || !newUrl} size="sm">
               <Plus className="h-4 w-4" />
-              Adicionar
+              {creating ? "Adicionando…" : "Adicionar aplicação"}
             </Button>
           </div>
           {appMsg && <p className="text-sm mb-2">{appMsg}</p>}
