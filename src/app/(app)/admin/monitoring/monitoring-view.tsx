@@ -75,6 +75,27 @@ interface TimelineData {
   aggregateSlaPct: number;
   totalDownMinutes: number;
   buckets: Array<{ start: string; pct: number; downMinutes: number }>;
+  bucket?: "hour" | "day";
+}
+
+interface IncidentEvent {
+  id: string;
+  kind: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationMinutes: number;
+  ongoing: boolean;
+  statusCode?: number | null;
+  errorMessage?: string | null;
+  triggerName?: string | null;
+  severity?: number;
+}
+
+interface EventsData {
+  totalDownMinutes: number;
+  slaPct: number;
+  eventCount: number;
+  events: IncidentEvent[];
 }
 
 const RANGES = [
@@ -94,6 +115,7 @@ export function MonitoringView() {
     name: string;
   } | null>(null);
   const [timeline, setTimeline] = useState<TimelineData | null>(null);
+  const [events, setEvents] = useState<EventsData | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
 
   const reload = useCallback(async () => {
@@ -121,14 +143,27 @@ export function MonitoringView() {
 
   async function openDrilldown(target: { type: "server" | "app"; id: string; name: string }) {
     setDrilldown(target);
+    await loadDrilldown(target, days <= 7 ? "hour" : "day");
+  }
+
+  async function loadDrilldown(
+    target: { type: "server" | "app"; id: string },
+    bucket: "hour" | "day",
+  ) {
     setTimeline(null);
+    setEvents(null);
     setTimelineLoading(true);
     try {
-      const r = await fetch(
-        `/api/admin/availability/timeline?type=${target.type}&id=${encodeURIComponent(target.id)}&days=${days}`,
-      );
-      const json = await r.json();
-      setTimeline(json);
+      const [tlRes, evRes] = await Promise.all([
+        fetch(
+          `/api/admin/availability/timeline?type=${target.type}&id=${encodeURIComponent(target.id)}&days=${days}&bucket=${bucket}`,
+        ).then((x) => x.json()),
+        fetch(
+          `/api/admin/availability/events?type=${target.type}&id=${encodeURIComponent(target.id)}`,
+        ).then((x) => x.json()),
+      ]);
+      setTimeline({ ...tlRes, bucket });
+      setEvents(evRes);
     } finally {
       setTimelineLoading(false);
     }
@@ -313,10 +348,13 @@ export function MonitoringView() {
           target={drilldown}
           days={days}
           timeline={timeline}
+          events={events}
           loading={timelineLoading}
+          onChangeBucket={(bucket) => loadDrilldown(drilldown, bucket)}
           onClose={() => {
             setDrilldown(null);
             setTimeline(null);
+            setEvents(null);
           }}
         />
       )}
@@ -594,22 +632,29 @@ function DrilldownModal({
   target,
   days,
   timeline,
+  events,
   loading,
+  onChangeBucket,
   onClose,
 }: {
   target: { type: "server" | "app"; id: string; name: string };
   days: number;
   timeline: TimelineData | null;
+  events: EventsData | null;
   loading: boolean;
+  onChangeBucket: (b: "hour" | "day") => void;
   onClose: () => void;
 }) {
+  const bucket = timeline?.bucket ?? "day";
+  const isHour = bucket === "hour";
+
   return (
     <div
       className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-lg shadow-lg max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col"
+        className="bg-card rounded-lg shadow-lg max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between p-4 border-b">
@@ -624,9 +669,29 @@ function DrilldownModal({
             </h3>
             <p className="text-xs text-muted-foreground">Últimos {days} dias</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fechar">
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-md border bg-muted/30 p-0.5 text-xs">
+              <button
+                onClick={() => onChangeBucket("day")}
+                className={`px-2.5 py-1 rounded ${
+                  !isHour ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground"
+                }`}
+              >
+                Dia
+              </button>
+              <button
+                onClick={() => onChangeBucket("hour")}
+                className={`px-2.5 py-1 rounded ${
+                  isHour ? "bg-primary text-primary-foreground font-medium" : "text-muted-foreground"
+                }`}
+              >
+                Hora
+              </button>
+            </div>
+            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Fechar">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
         <div className="overflow-auto p-4">
           {loading ? (
@@ -638,7 +703,10 @@ function DrilldownModal({
               <div className="grid grid-cols-3 gap-3 mb-4 text-sm">
                 <Stat label="SLA do período" value={`${timeline.aggregateSlaPct.toFixed(2)}%`} />
                 <Stat label="Tempo fora" value={formatMinutes(timeline.totalDownMinutes)} />
-                <Stat label="Buckets" value={String(timeline.buckets.length)} />
+                <Stat
+                  label={isHour ? "Pontos (horas)" : "Pontos (dias)"}
+                  value={String(timeline.buckets.length)}
+                />
               </div>
               <div className="h-72 -ml-2">
                 <ResponsiveContainer width="100%" height="100%">
@@ -647,7 +715,15 @@ function DrilldownModal({
                     <XAxis
                       dataKey="start"
                       fontSize={10}
-                      tickFormatter={(d) => formatDate(d).slice(0, 5)}
+                      tickFormatter={(d) =>
+                        isHour
+                          ? new Date(d).toLocaleString("pt-BR", {
+                              day: "2-digit",
+                              month: "2-digit",
+                              hour: "2-digit",
+                            })
+                          : formatDate(d).slice(0, 5)
+                      }
                       stroke="hsl(var(--muted-foreground))"
                     />
                     <YAxis
@@ -657,7 +733,11 @@ function DrilldownModal({
                       unit="%"
                     />
                     <Tooltip
-                      labelFormatter={(d) => formatDate(String(d))}
+                      labelFormatter={(d) =>
+                        isHour
+                          ? new Date(String(d)).toLocaleString("pt-BR")
+                          : formatDate(String(d))
+                      }
                       contentStyle={{
                         background: "hsl(var(--card))",
                         border: "1px solid hsl(var(--border))",
@@ -677,8 +757,72 @@ function DrilldownModal({
                 </ResponsiveContainer>
               </div>
               <p className="text-xs text-muted-foreground text-center mt-3">
-                Cada ponto = 1 dia. SLA% = (24h − minutos fora) / 24h.
+                Cada ponto = {isHour ? "1 hora" : "1 dia"}. SLA% ={" "}
+                ({isHour ? "60min" : "24h"} − minutos fora) /{" "}
+                {isHour ? "60min" : "24h"}.
               </p>
+
+              {events && events.events.length > 0 && (
+                <div className="mt-6 border-t pt-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className="text-sm font-semibold">
+                      Incidentes detalhados ({events.eventCount})
+                    </h4>
+                    <span className="text-xs text-muted-foreground">
+                      Mês corrente · {events.totalDownMinutes} min total fora
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="text-left text-muted-foreground">
+                        <tr className="border-b">
+                          <th className="py-2 pr-3">Início</th>
+                          <th className="py-2 pr-3">Fim</th>
+                          <th className="py-2 pr-3">Duração</th>
+                          <th className="py-2">Detalhe</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {events.events.map((e) => (
+                          <tr key={e.id} className="border-b align-top">
+                            <td className="py-2 pr-3 tabular-nums whitespace-nowrap">
+                              {new Date(e.startedAt).toLocaleString("pt-BR")}
+                            </td>
+                            <td className="py-2 pr-3 tabular-nums whitespace-nowrap">
+                              {e.ongoing ? (
+                                <span className="text-red-500 font-medium">em andamento</span>
+                              ) : e.endedAt ? (
+                                new Date(e.endedAt).toLocaleString("pt-BR")
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td className="py-2 pr-3 tabular-nums">
+                              {formatMinutes(e.durationMinutes)}
+                            </td>
+                            <td className="py-2 text-muted-foreground">
+                              {e.kind === "monitor-gap" && (
+                                <span className="text-amber-600">monitor offline · </span>
+                              )}
+                              {e.statusCode != null && <span>HTTP {e.statusCode}</span>}
+                              {e.severity != null && (
+                                <span>severidade {e.severity}</span>
+                              )}
+                              {e.triggerName && <span> · {e.triggerName}</span>}
+                              {e.errorMessage && <span> · {e.errorMessage}</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {events && events.events.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6 mt-6 border-t">
+                  Nenhum incidente detalhado no mês corrente. 🎉
+                </p>
+              )}
             </>
           )}
         </div>
