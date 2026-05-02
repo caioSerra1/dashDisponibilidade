@@ -453,6 +453,9 @@ function TargetCard({
                 strokeWidth={1.5}
                 dot={false}
               />
+              {/* XAxis hide com dataKey="start" garante que o tooltip recebe
+                  a data ISO (não o índice 0/1/2 que vira "01/01/1988"). */}
+              <XAxis dataKey="start" hide />
               <YAxis hide domain={[Math.min(95, slaPct - 1), 100]} />
               <Tooltip
                 contentStyle={{

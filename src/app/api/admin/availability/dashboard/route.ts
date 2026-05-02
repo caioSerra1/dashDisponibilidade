@@ -84,8 +84,11 @@ export async function GET(request: Request) {
         startedAt: e.startedAt,
         endedAt: e.endedAt,
       }));
-      const sparkline = computeSlaTimeline(normalized, from, now, DAY_MS);
-      const slaPct = computeAvailabilityFromEvents(normalized, from, now);
+      // Limita o início ao createdAt da WebApp pra não mostrar 100% fake
+      // em dias anteriores ao cadastro (não tinha como medir).
+      const effectiveFrom = a.createdAt > from ? a.createdAt : from;
+      const sparkline = computeSlaTimeline(normalized, effectiveFrom, now, DAY_MS);
+      const slaPct = computeAvailabilityFromEvents(normalized, effectiveFrom, now);
       const totalDownMs = sparkline.reduce((acc, b) => acc + b.downMs, 0);
       const incidentCount = events.filter((e) => e.kind === "down").length;
       const gapCount = events.filter((e) => e.kind === "monitor-gap").length;

@@ -39,8 +39,20 @@ export async function GET(request: Request) {
   }
 
   const now = new Date();
-  const from = new Date(now.getTime() - days * DAY_MS);
+  const requestedFrom = new Date(now.getTime() - days * DAY_MS);
   const to = now;
+
+  // Pra apps, limita o início ao createdAt da WebApp (sem dado antes disso).
+  let from = requestedFrom;
+  if (type === "app") {
+    const webApp = await prisma.webApp.findUnique({
+      where: { id },
+      select: { createdAt: true },
+    });
+    if (webApp && webApp.createdAt > requestedFrom) {
+      from = webApp.createdAt;
+    }
+  }
 
   const events =
     type === "server"
