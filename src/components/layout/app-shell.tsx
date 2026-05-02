@@ -79,7 +79,8 @@ const adminGroups: NavGroup[] = [
     items: [
       { href: "/admin/loja/pedidos", label: "Pedidos da Loja", icon: ClipboardList },
       { href: "/admin/notifications", label: "Enviar Aviso", icon: Megaphone },
-      { href: "/admin/zabbix", label: "Servidores Zabbix", icon: Server },
+      { href: "/admin/monitoring", label: "Monitoramento", icon: Activity },
+      { href: "/admin/zabbix", label: "Servidores & URLs", icon: Server },
       { href: "/admin/jobs", label: "Execuções", icon: Activity },
     ],
   },

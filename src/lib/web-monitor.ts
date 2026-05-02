@@ -42,6 +42,56 @@ export const computeWebAppSla = computeAvailabilityFromEvents;
 /** @deprecated Use `DowntimeInterval`. Mantido pra compat. */
 export type WebAppEventInterval = DowntimeInterval;
 
+export interface TimelineBucket {
+  start: Date;
+  end: Date;
+  pct: number;
+  downMs: number;
+}
+
+/**
+ * Quebra o período [from, to) em buckets de tamanho `bucketMs` e calcula
+ * SLA% pra cada bucket a partir dos eventos. Pura — base pra renderizar
+ * gráfico de SLA diário/horário no dashboard.
+ *
+ * Eventos `up` são ignorados; `down` e `monitor-gap` (se incluídos pelo
+ * caller) contam como indisponibilidade.
+ */
+export function computeSlaTimeline(
+  events: readonly DowntimeInterval[],
+  from: Date,
+  to: Date,
+  bucketMs: number,
+): TimelineBucket[] {
+  const fromMs = from.getTime();
+  const toMs = to.getTime();
+  if (toMs <= fromMs || bucketMs <= 0) return [];
+
+  const buckets: TimelineBucket[] = [];
+  for (let cursor = fromMs; cursor < toMs; cursor += bucketMs) {
+    const bucketStart = cursor;
+    const bucketEnd = Math.min(cursor + bucketMs, toMs);
+    const bucketDuration = bucketEnd - bucketStart;
+
+    let downMs = 0;
+    for (const ev of events) {
+      if (ev.kind !== "down") continue;
+      const evStart = Math.max(ev.startedAt.getTime(), bucketStart);
+      const evEnd = Math.min((ev.endedAt ?? to).getTime(), bucketEnd);
+      if (evEnd > evStart) downMs += evEnd - evStart;
+    }
+
+    const pct = ((bucketDuration - downMs) / bucketDuration) * 100;
+    buckets.push({
+      start: new Date(bucketStart),
+      end: new Date(bucketEnd),
+      pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)),
+      downMs,
+    });
+  }
+  return buckets;
+}
+
 /**
  * Busca SLA de uma WebApp no período via Prisma. Conta eventos `down` E
  * `monitor-gap` (gap = nosso check ficou offline, sem como medir → conta

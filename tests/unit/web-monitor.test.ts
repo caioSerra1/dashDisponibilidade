@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computeAvailabilityFromEvents,
+  computeSlaTimeline,
   computeWebAppSla,
   matchExpectStatus,
   type DowntimeInterval,
@@ -188,6 +189,113 @@ describe("computeAvailabilityFromEvents — cenários críticos pra cálculo de 
     // ausência de eventos é prova de uptime — não preenchemos lacuna.
     const sla = computeAvailabilityFromEvents([], from, to);
     expect(sla).toBe(100);
+  });
+});
+
+describe("computeSlaTimeline — gráfico de disponibilidade", () => {
+  const DAY_MS = 24 * 3600 * 1000;
+  const HOUR_MS = 3600 * 1000;
+
+  it("período sem eventos = todos buckets 100%", () => {
+    const from = new Date("2026-04-01T00:00:00Z");
+    const to = new Date("2026-04-08T00:00:00Z");
+    const buckets = computeSlaTimeline([], from, to, DAY_MS);
+    expect(buckets).toHaveLength(7);
+    expect(buckets.every((b) => b.pct === 100)).toBe(true);
+  });
+
+  it("evento de 2h num único dia: só esse bucket cai", () => {
+    const from = new Date("2026-04-01T00:00:00Z");
+    const to = new Date("2026-04-08T00:00:00Z");
+    const buckets = computeSlaTimeline(
+      [
+        ev(
+          "down",
+          new Date("2026-04-03T10:00:00Z"),
+          new Date("2026-04-03T12:00:00Z"),
+        ),
+      ],
+      from,
+      to,
+      DAY_MS,
+    );
+    expect(buckets).toHaveLength(7);
+    expect(buckets[0]!.pct).toBe(100);
+    expect(buckets[1]!.pct).toBe(100);
+    // Dia 3 (índice 2): 24h - 2h = 22h up = 91.67%
+    const expected = ((24 - 2) / 24) * 100;
+    expect(buckets[2]!.pct).toBe(Math.round(expected * 100) / 100);
+    expect(buckets[3]!.pct).toBe(100);
+  });
+
+  it("evento atravessando 2 dias divide downtime corretamente", () => {
+    const from = new Date("2026-04-01T00:00:00Z");
+    const to = new Date("2026-04-08T00:00:00Z");
+    // 23h-1h cobre 1h do dia 1 + 1h do dia 2
+    const buckets = computeSlaTimeline(
+      [
+        ev(
+          "down",
+          new Date("2026-04-01T23:00:00Z"),
+          new Date("2026-04-02T01:00:00Z"),
+        ),
+      ],
+      from,
+      to,
+      DAY_MS,
+    );
+    const dia1 = buckets[0]!.pct;
+    const dia2 = buckets[1]!.pct;
+    const expected = ((24 - 1) / 24) * 100;
+    expect(dia1).toBe(Math.round(expected * 100) / 100);
+    expect(dia2).toBe(Math.round(expected * 100) / 100);
+  });
+
+  it("bucket horário com janela de 24h dá 24 buckets", () => {
+    const from = new Date("2026-04-01T00:00:00Z");
+    const to = new Date("2026-04-02T00:00:00Z");
+    const buckets = computeSlaTimeline([], from, to, HOUR_MS);
+    expect(buckets).toHaveLength(24);
+  });
+
+  it("evento ainda aberto conta até `to`", () => {
+    const from = new Date("2026-04-01T00:00:00Z");
+    const to = new Date("2026-04-03T00:00:00Z");
+    const buckets = computeSlaTimeline(
+      [ev("down", new Date("2026-04-02T20:00:00Z"), null)],
+      from,
+      to,
+      DAY_MS,
+    );
+    // Dia 1: 100% (sem eventos). Dia 2: 4h fora (20:00→24:00) = 83.33%
+    expect(buckets[0]!.pct).toBe(100);
+    const expected = ((24 - 4) / 24) * 100;
+    expect(buckets[1]!.pct).toBe(Math.round(expected * 100) / 100);
+  });
+
+  it("downMs por bucket é exato (pra mostrar tooltip)", () => {
+    const from = new Date("2026-04-01T00:00:00Z");
+    const to = new Date("2026-04-02T00:00:00Z");
+    const buckets = computeSlaTimeline(
+      [
+        ev(
+          "down",
+          new Date("2026-04-01T10:00:00Z"),
+          new Date("2026-04-01T11:30:00Z"),
+        ),
+      ],
+      from,
+      to,
+      DAY_MS,
+    );
+    expect(buckets[0]!.downMs).toBe(90 * 60 * 1000); // 1h30min em ms
+  });
+
+  it("bucketMs inválido retorna []", () => {
+    const from = new Date("2026-04-01T00:00:00Z");
+    const to = new Date("2026-04-02T00:00:00Z");
+    expect(computeSlaTimeline([], from, to, 0)).toEqual([]);
+    expect(computeSlaTimeline([], from, to, -1000)).toEqual([]);
   });
 });
 
