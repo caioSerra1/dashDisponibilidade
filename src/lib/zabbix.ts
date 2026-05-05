@@ -129,11 +129,12 @@ export async function getAvailability(
       key_: string;
       value_type: string;
       units: string;
+      lastvalue?: string;
     }>>(
       "item.get",
       {
         hostids: hostIds,
-        output: ["itemid", "hostid", "name", "key_", "value_type", "units"],
+        output: ["itemid", "hostid", "name", "key_", "value_type", "units", "lastvalue"],
         monitored: true,
       },
       auth,
@@ -145,23 +146,37 @@ export async function getAvailability(
     //   10.  "Disponibilidade ICMP" (item de ping 0/1)
     //   5.   key_=icmpping nativo (não tem guardrails do user)
     //   3.   key_=agent.ping nativo
+    //
+    // Empate de prioridade: prefere item value_type=0 (float) sobre 3 (uint)
+    // porque float dá 99.99%, uint trunca pra 99% (perda de precisão).
     const itemByHost = new Map<string, {
       itemid: string;
       valueType: number;
+      lastvalue: string | undefined;
       isPercentItem: boolean;
       priority: number;
     }>();
 
     function consider(
       hostid: string,
-      itemid: string,
-      valueType: number,
+      item: { itemid: string; value_type: string; lastvalue?: string },
       isPercentItem: boolean,
       priority: number,
     ) {
+      const valueType = Number(item.value_type);
       const existing = itemByHost.get(hostid);
-      if (existing && existing.priority >= priority) return;
-      itemByHost.set(hostid, { itemid, valueType, isPercentItem, priority });
+      if (existing) {
+        if (existing.priority > priority) return;
+        // Mesma prioridade: prefere float (value_type=0) sobre uint (value_type=3)
+        if (existing.priority === priority && existing.valueType === 0 && valueType !== 0) return;
+      }
+      itemByHost.set(hostid, {
+        itemid: item.itemid,
+        valueType,
+        lastvalue: item.lastvalue,
+        isPercentItem,
+        priority,
+      });
     }
 
     // 1ª passada: items "Disponibilidade (%)" customizados — valor é
@@ -170,7 +185,7 @@ export async function getAvailability(
       if (item.units !== "%") continue;
       for (const { pattern, priority } of AVAILABILITY_NAME_PATTERNS) {
         if (pattern.test(item.name)) {
-          consider(item.hostid, item.itemid, Number(item.value_type), true, priority);
+          consider(item.hostid, item, true, priority);
           break; // pega o primeiro pattern que bater
         }
       }
@@ -181,7 +196,7 @@ export async function getAvailability(
       for (const item of items) {
         if (item.key_.startsWith(key)) {
           const priority = key === "icmpping" ? 5 : 3;
-          consider(item.hostid, item.itemid, Number(item.value_type), false, priority);
+          consider(item.hostid, item, false, priority);
         }
       }
     }
@@ -189,18 +204,32 @@ export async function getAvailability(
     for (const item of items) {
       if (itemByHost.has(item.hostid)) continue;
       if (/ping/i.test(item.name) || /ping/i.test(item.key_)) {
-        consider(item.hostid, item.itemid, Number(item.value_type), false, 1);
+        consider(item.hostid, item, false, 1);
       }
     }
 
-    // 2. Pra cada host com item, busca histórico do período. Se history
-    //    estiver vazio ou RPC falhar, retorna `null` (sem dados — caller
-    //    decide o que fazer; NUNCA preenchemos com 100% fake).
-    //
-    //    - Item de %: valor já É a disponibilidade (avg direto)
-    //    - Item de ping: valor é 0/1; pct = avg * 100
+    // 2. Pra items de % (Disponibilidade do dashboard), usa LASTVALUE direto
+    //    — é exatamente o número que aparece no widget nativo do Zabbix.
+    //    Pra items de ping, usa history.get pra calcular avg do período.
     const results = await Promise.all(
       Array.from(itemByHost.entries()).map(async ([hostid, info]) => {
+        // Item de % do dashboard: valor já É a disponibilidade.
+        if (info.isPercentItem) {
+          if (info.lastvalue == null || info.lastvalue === "") {
+            console.warn(`[zabbix] lastvalue ausente pra hostid=${hostid}, assumindo 100%`);
+            return { hostid, pct: 100 as number | null };
+          }
+          const pct = Number(info.lastvalue);
+          if (!Number.isFinite(pct)) {
+            return { hostid, pct: null as number | null };
+          }
+          return {
+            hostid,
+            pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,
+          };
+        }
+
+        // Item de ping (fallback): calcular avg via history.get
         try {
           const history = await rpc<Array<{ value: string }>>(
             "history.get",
@@ -214,16 +243,12 @@ export async function getAvailability(
             auth,
           );
           if (history.length === 0) {
-            // History vazia = retenção do Zabbix expirou ou dados foram
-            // resetados no item. Nesses casos assumimos 100% (sem registro
-            // de incidentes naquele período = considerado up). Decisão de
-            // negócio: melhor que excluir o host da média.
             console.warn(`[zabbix] history vazia pra hostid=${hostid}, assumindo 100%`);
             return { hostid, pct: 100 as number | null };
           }
           const sum = history.reduce((acc, h) => acc + Number(h.value), 0);
           const avg = sum / history.length;
-          const pct = info.isPercentItem ? avg : avg * 100;
+          const pct = avg * 100; // ping items: avg de 0/1 vira porcentagem
           return {
             hostid,
             pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,
