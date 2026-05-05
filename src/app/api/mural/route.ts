@@ -252,7 +252,8 @@ export async function GET(request: Request) {
       pontosDev: totalPontosDev,
       tasksDev: totalTasksDev,
       tasksSuporte: totalTasksSuporte,
-      slaMedio: Math.round(slaMedio * 100) / 100,
+      // floor (não round) — SLA é dado sensível, 99.995% NÃO pode virar 100%.
+      slaMedio: Math.floor(slaMedio * 100) / 100,
       mttrMedio,
       mttaMedio,
       wipAtual: 0,

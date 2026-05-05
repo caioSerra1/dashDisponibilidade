@@ -128,7 +128,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     period: { from, to: now, days },
     summary: {
-      aggregateSlaPct: Math.round(aggregateSla * 100) / 100,
+      aggregateSlaPct: Math.floor(aggregateSla * 100) / 100,
       totalIncidents,
       totalGaps,
       totalDownMinutes: Math.round(totalDownMinutes * 10) / 10,

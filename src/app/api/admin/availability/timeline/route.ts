@@ -94,7 +94,8 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     period: { from, to, days, bucket: bucketParam },
-    aggregateSlaPct: Math.round(aggregateSla * 100) / 100,
+    // floor — SLA não pode arredondar pra cima
+    aggregateSlaPct: Math.floor(aggregateSla * 100) / 100,
     totalDownMinutes: Math.round((totalDownMs / 60000) * 10) / 10,
     buckets: buckets.map((b) => ({
       start: b.start.toISOString(),

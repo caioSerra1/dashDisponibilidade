@@ -34,7 +34,7 @@ export function computeAvailabilityFromEvents(
   }
 
   const pct = ((totalMs - downMs) / totalMs) * 100;
-  return Math.max(0, Math.min(100, Math.round(pct * 100) / 100));
+  return Math.max(0, Math.min(100, Math.floor(pct * 100) / 100));
 }
 
 /** @deprecated Use `computeAvailabilityFromEvents`. Mantido pra compat. */
@@ -85,7 +85,7 @@ export function computeSlaTimeline(
     buckets.push({
       start: new Date(bucketStart),
       end: new Date(bucketEnd),
-      pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)),
+      pct: Math.max(0, Math.min(100, Math.floor(pct * 100) / 100)),
       downMs,
     });
   }

@@ -256,7 +256,7 @@ export async function getAvailability(
             const pct = info.isPercentItem ? fallback : fallback * 100;
             return {
               hostid,
-              pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,
+              pct: Math.max(0, Math.min(100, Math.floor(pct * 100) / 100)) as number | null,
             };
           }
           const sum = history.reduce((acc, h) => acc + Number(h.value), 0);
@@ -264,7 +264,7 @@ export async function getAvailability(
           const pct = info.isPercentItem ? avg : avg * 100;
           return {
             hostid,
-            pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,
+            pct: Math.max(0, Math.min(100, Math.floor(pct * 100) / 100)) as number | null,
           };
         } catch (e) {
           console.error(`[zabbix] history.get falhou pra ${hostid}`, (e as Error).message);

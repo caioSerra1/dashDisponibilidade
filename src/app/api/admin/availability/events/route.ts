@@ -84,7 +84,8 @@ export async function GET(request: Request) {
   return NextResponse.json({
     period: { from, to: until },
     totalDownMinutes: Math.round((totalDownMs / 60000) * 10) / 10,
-    slaPct: Math.round(slaPct * 100) / 100,
+    // floor — SLA não pode arredondar pra cima (99.995 deve mostrar 99.99)
+    slaPct: Math.floor(slaPct * 100) / 100,
     eventCount: enriched.length,
     events: enriched,
   });
