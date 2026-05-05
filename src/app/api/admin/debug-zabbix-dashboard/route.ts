@@ -7,6 +7,36 @@ export const dynamic = "force-dynamic";
 
 let nextId = 1;
 
+interface DashboardWidget {
+  widgetid: string;
+  type: string;
+  name: string;
+  fields?: Array<{ type: number; name: string; value: string }>;
+}
+
+interface DashboardEntry {
+  dashboardid: string;
+  name: string;
+  pages?: Array<{ widgets?: DashboardWidget[] }>;
+}
+
+function summarizeWidget(w: DashboardWidget) {
+  return {
+    type: w.type,
+    name: w.name,
+    fields: (w.fields ?? []).filter((f) => /item|host/i.test(f.name)),
+  };
+}
+
+function summarizeDashboard(d: DashboardEntry) {
+  return {
+    dashboardid: d.dashboardid,
+    name: d.name,
+    widgetCount: d.pages?.reduce((acc, p) => acc + (p.widgets?.length ?? 0), 0),
+    widgets: d.pages?.flatMap((p) => (p.widgets ?? []).map(summarizeWidget)),
+  };
+}
+
 async function rpc<T>(method: string, params: unknown, authToken?: string): Promise<T> {
   const { ZABBIX_URL } = env();
   if (!ZABBIX_URL) throw new Error("Zabbix URL not configured");
@@ -49,18 +79,7 @@ export async function GET() {
     const version = await rpc<string>("apiinfo.version", {}).catch(() => "?");
 
     // 2. Lista dashboards
-    const dashboards = await rpc<Array<{
-      dashboardid: string;
-      name: string;
-      pages?: Array<{
-        widgets?: Array<{
-          widgetid: string;
-          type: string;
-          name: string;
-          fields?: Array<{ type: number; name: string; value: string }>;
-        }>;
-      }>;
-    }>>(
+    const dashboards = await rpc<DashboardEntry[]>(
       "dashboard.get",
       { output: "extend", selectPages: "extend" },
       authToken,
@@ -83,111 +102,97 @@ export async function GET() {
     const now = Math.floor(Date.now() / 1000);
     const thirtyDaysAgo = now - 30 * 24 * 3600;
 
-    const hostAnalysis = await Promise.all(
-      enabled.map(async (h) => {
-        // Items de % com nome contendo "disponib"
-        const items = await rpc<Array<{
-          itemid: string;
-          name: string;
-          key_: string;
-          value_type: string;
-          units: string;
-          lastvalue?: string;
-          lastclock?: string;
-        }>>(
-          "item.get",
-          {
-            hostids: [h.hostid],
-            output: ["itemid", "name", "key_", "value_type", "units", "lastvalue", "lastclock"],
-            search: { name: "disponib" },
-          },
-          authToken,
-        );
+    async function analyzeItem(item: {
+      itemid: string;
+      name: string;
+      key_: string;
+      value_type: string;
+      units: string;
+      lastvalue?: string;
+      lastclock?: string;
+    }) {
+      const valueType = Number(item.value_type);
+      const history = await rpc<Array<{ clock: string; value: string }>>(
+        "history.get",
+        {
+          itemids: [item.itemid],
+          time_from: thirtyDaysAgo,
+          time_till: now,
+          history: valueType,
+          output: ["clock", "value"],
+          sortfield: "clock",
+          sortorder: "DESC",
+          limit: 200,
+        },
+        authToken,
+      ).catch((e) => ({ error: (e as Error).message } as never));
 
-        // Pra cada item de %, busca history (datapoints) e trend (avg/min/max diários)
-        const itemAnalysis = await Promise.all(
-          items.filter((i) => i.units === "%").map(async (item) => {
-            const valueType = Number(item.value_type);
-            const history = await rpc<Array<{ clock: string; value: string }>>(
-              "history.get",
-              {
-                itemids: [item.itemid],
-                time_from: thirtyDaysAgo,
-                time_till: now,
-                history: valueType,
-                output: ["clock", "value"],
-                sortfield: "clock",
-                sortorder: "DESC",
-                limit: 200,
-              },
-              authToken,
-            ).catch((e) => ({ error: (e as Error).message } as never));
+      const trends = await rpc<Array<{ clock: string; num: string; value_min: string; value_avg: string; value_max: string }>>(
+        "trend.get",
+        {
+          itemids: [item.itemid],
+          time_from: thirtyDaysAgo,
+          time_till: now,
+          output: "extend",
+        },
+        authToken,
+      ).catch((e) => ({ error: (e as Error).message } as never));
 
-            // Trends: agregação diária do Zabbix (mais leve, mais antiga)
-            const trends = await rpc<Array<{ clock: string; num: string; value_min: string; value_avg: string; value_max: string }>>(
-              "trend.get",
-              {
-                itemids: [item.itemid],
-                time_from: thirtyDaysAgo,
-                time_till: now,
-                output: "extend",
-              },
-              authToken,
-            ).catch((e) => ({ error: (e as Error).message } as never));
+      const histArr = Array.isArray(history) ? history : [];
+      const histAvg = histArr.length > 0
+        ? histArr.reduce((acc, h) => acc + Number(h.value), 0) / histArr.length
+        : null;
+      const trendArr = Array.isArray(trends) ? trends : [];
+      const trendAvg = trendArr.length > 0
+        ? trendArr.reduce((acc, t) => acc + Number(t.value_avg), 0) / trendArr.length
+        : null;
 
-            const histArr = Array.isArray(history) ? history : [];
-            const histAvg = histArr.length > 0
-              ? histArr.reduce((acc, h) => acc + Number(h.value), 0) / histArr.length
-              : null;
+      return {
+        itemid: item.itemid,
+        name: item.name,
+        key_: item.key_,
+        units: item.units,
+        value_type: item.value_type,
+        lastvalue: item.lastvalue,
+        lastclock: item.lastclock,
+        historyCount: histArr.length,
+        historyAvg: histAvg,
+        historySample: histArr.slice(0, 5),
+        trendCount: trendArr.length,
+        trendAvg,
+        trendSample: trendArr.slice(0, 5),
+      };
+    }
 
-            const trendArr = Array.isArray(trends) ? trends : [];
-            const trendAvg = trendArr.length > 0
-              ? trendArr.reduce((acc, t) => acc + Number(t.value_avg), 0) / trendArr.length
-              : null;
+    async function analyzeHost(h: { hostid: string; name: string }) {
+      const items = await rpc<Array<{
+        itemid: string;
+        name: string;
+        key_: string;
+        value_type: string;
+        units: string;
+        lastvalue?: string;
+        lastclock?: string;
+      }>>(
+        "item.get",
+        {
+          hostids: [h.hostid],
+          output: ["itemid", "name", "key_", "value_type", "units", "lastvalue", "lastclock"],
+          search: { name: "disponib" },
+        },
+        authToken,
+      );
+      const itemAnalysis = await Promise.all(
+        items.filter((i) => i.units === "%").map(analyzeItem),
+      );
+      return { host: h.name, hostid: h.hostid, items: itemAnalysis };
+    }
 
-            return {
-              itemid: item.itemid,
-              name: item.name,
-              key_: item.key_,
-              units: item.units,
-              value_type: item.value_type,
-              lastvalue: item.lastvalue,
-              lastclock: item.lastclock,
-              historyCount: histArr.length,
-              historyAvg: histAvg,
-              historySample: histArr.slice(0, 5),
-              trendCount: trendArr.length,
-              trendAvg,
-              trendSample: trendArr.slice(0, 5),
-            };
-          }),
-        );
-
-        return { host: h.name, hostid: h.hostid, items: itemAnalysis };
-      }),
-    );
+    const hostAnalysis = await Promise.all(enabled.map(analyzeHost));
 
     return NextResponse.json({
       zabbixVersion: version,
-      dashboards: Array.isArray(dashboards)
-        ? dashboards.map((d) => ({
-            dashboardid: d.dashboardid,
-            name: d.name,
-            widgetCount: d.pages?.reduce(
-              (acc, p) => acc + (p.widgets?.length ?? 0),
-              0,
-            ),
-            widgets: d.pages?.flatMap((p) =>
-              (p.widgets ?? []).map((w) => ({
-                type: w.type,
-                name: w.name,
-                fields: (w.fields ?? []).filter((f) =>
-                  /item|host/i.test(f.name),
-                ),
-              })),
-            ),
-          }))
-        : dashboards,
+      dashboards: Array.isArray(dashboards) ? dashboards.map(summarizeDashboard) : dashboards,
       hostAnalysis,
     });
   } finally {
