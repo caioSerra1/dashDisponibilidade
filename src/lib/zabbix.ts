@@ -77,15 +77,30 @@ export interface HostAvailability {
 }
 
 /**
- * Padrões de NOME (case-insensitive) que identificam items de disponibilidade
- * customizados que o user mantém no Zabbix com toda lógica de guardrails:
- * queda de agente, latência, etc. O valor desses items é DIRETAMENTE a %
- * de disponibilidade que aparece no widget "Disponibilidade" do dashboard.
+ * Padrões de NOME que identificam items de disponibilidade customizados
+ * do dashboard nativo do Zabbix. ORDEM IMPORTA — primeiro match ganha.
  *
- * Buscamos o item por NAME_REGEX em vez de key — o user dá nome amigável
- * tipo "Disponibilidade", "Plataforma Disponibilidade %", etc.
+ * O user mantém items tipo:
+ *   - "Disponibilidade (%) - 30 dias"  ← QUEREMOS
+ *   - "Disponibilidade (%) - 1h"
+ *   - "Plataforma HTTP - Disponibilidade (%) - 30 dias"
+ *   - "Disponibilidade ICMP" (ping 0/1, items.units="")
+ *
+ * Items que NÃO devem matchar (apesar de conter "available"):
+ *   - "Available memory in %"
+ *   - "Active agent availability"
+ *   - "Utilization of availability manager..."
+ *
+ * Por isso usamos regex bem específico em vez de "availab|disponib" amplo.
  */
-const AVAILABILITY_NAME_PATTERNS = [/disponib/i, /availab/i];
+const AVAILABILITY_NAME_PATTERNS: Array<{ pattern: RegExp; priority: number }> = [
+  // Prioridade alta: "Disponibilidade (%) - 30 dias" (período mensal — bate com SLA do mês)
+  { pattern: /disponibilidade\s*\(\s*%\s*\)\s*-?\s*30\s*dias/i, priority: 100 },
+  // Prioridade média: "Disponibilidade (%) - 1h" ou "- 24h"
+  { pattern: /disponibilidade\s*\(\s*%\s*\)/i, priority: 50 },
+  // Prioridade baixa: "Disponibilidade ICMP" (item de ping 0/1)
+  { pattern: /disponibilidade\s*icmp/i, priority: 10 },
+];
 
 /**
  * Fallback: keys padrão do Zabbix pra hosts que não têm item customizado
@@ -125,48 +140,56 @@ export async function getAvailability(
     );
 
     // Prioridade na escolha do item:
-    //   1. Item cujo NAME bate em /disponib/i ou /availab/i (item customizado
-    //      do user, com guardrails do dashboard nativo)
-    //   2. Item com key_ = icmpping (calcula via avg dos pings)
-    //   3. Item com key_ = agent.ping
-    //   4. Qualquer item com "ping" no nome (último recurso)
-    const itemByHost = new Map<string, { itemid: string; valueType: number; isPercentItem: boolean }>();
+    //   100. "Disponibilidade (%) - 30 dias" (item customizado, escala mensal)
+    //   50.  "Disponibilidade (%) - 1h" / "24h" (qualquer outra escala)
+    //   10.  "Disponibilidade ICMP" (item de ping 0/1)
+    //   5.   key_=icmpping nativo (não tem guardrails do user)
+    //   3.   key_=agent.ping nativo
+    const itemByHost = new Map<string, {
+      itemid: string;
+      valueType: number;
+      isPercentItem: boolean;
+      priority: number;
+    }>();
 
-    // 1ª passada: items "Disponibilidade" customizados (valor é DIRETAMENTE %)
+    function consider(
+      hostid: string,
+      itemid: string,
+      valueType: number,
+      isPercentItem: boolean,
+      priority: number,
+    ) {
+      const existing = itemByHost.get(hostid);
+      if (existing && existing.priority >= priority) return;
+      itemByHost.set(hostid, { itemid, valueType, isPercentItem, priority });
+    }
+
+    // 1ª passada: items "Disponibilidade (%)" customizados — valor é
+    // DIRETAMENTE a porcentagem (units = "%"). Pega por prioridade.
     for (const item of items) {
-      if (itemByHost.has(item.hostid)) continue;
-      const matchesName = AVAILABILITY_NAME_PATTERNS.some((re) => re.test(item.name));
-      if (matchesName && (item.units === "%" || item.units === "")) {
-        itemByHost.set(item.hostid, {
-          itemid: item.itemid,
-          valueType: Number(item.value_type),
-          isPercentItem: true,
-        });
+      if (item.units !== "%") continue;
+      for (const { pattern, priority } of AVAILABILITY_NAME_PATTERNS) {
+        if (pattern.test(item.name)) {
+          consider(item.hostid, item.itemid, Number(item.value_type), true, priority);
+          break; // pega o primeiro pattern que bater
+        }
       }
     }
 
     // 2ª passada: items de ping nativos (precisa avg pra virar %)
     for (const key of AVAILABILITY_ITEM_KEYS) {
       for (const item of items) {
-        if (itemByHost.has(item.hostid)) continue;
         if (item.key_.startsWith(key)) {
-          itemByHost.set(item.hostid, {
-            itemid: item.itemid,
-            valueType: Number(item.value_type),
-            isPercentItem: false,
-          });
+          const priority = key === "icmpping" ? 5 : 3;
+          consider(item.hostid, item.itemid, Number(item.value_type), false, priority);
         }
       }
     }
-    // 3ª passada: qualquer item com "ping" no nome
+    // 3ª passada: qualquer item com "ping" no nome (último recurso)
     for (const item of items) {
       if (itemByHost.has(item.hostid)) continue;
       if (/ping/i.test(item.name) || /ping/i.test(item.key_)) {
-        itemByHost.set(item.hostid, {
-          itemid: item.itemid,
-          valueType: Number(item.value_type),
-          isPercentItem: false,
-        });
+        consider(item.hostid, item.itemid, Number(item.value_type), false, 1);
       }
     }
 
