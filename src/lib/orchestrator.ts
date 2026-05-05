@@ -113,17 +113,40 @@ async function computeSlaMedio(
     return { media: 100, breakdown: [] };
   }
 
-  // Servidores: SLA do espelho local. ServerEvent só existe pra incidentes —
-  // ausência de eventos = host esteve up 100% do tempo (verdade auditável,
-  // não fake — é só interpretação correta da ausência de problemas).
-  const serverBreakdown: HostBreakdownItem[] = await Promise.all(
-    enabledHosts.map(async (h) => ({
-      hostId: h.hostId,
-      name: h.name,
-      pct: await getServerSla(h.hostId, from, until),
-      type: "server" as const,
-    })),
-  );
+  // Servidores: SLA lido DIRETAMENTE do dashboard "Disponibilidade" do
+  // Zabbix em runtime (item customizado com nome contendo "Disponib").
+  // Esse item já contém os guardrails do user (queda de agente, etc) —
+  // replicamos exatamente o que aparece no widget nativo.
+  // ServerEvent (espelho local) continua existindo só pra histórico/auditoria
+  // de INCIDENTES individuais (modal "Ver incidentes"), não pra SLA agregado.
+  let serverBreakdown: HostBreakdownItem[] = [];
+  if (enabledHosts.length > 0) {
+    try {
+      const zabbixResults = await getAvailability(
+        enabledHosts.map((h) => h.hostId),
+        from,
+        until,
+      );
+      const byId = new Map(zabbixResults.map((r) => [r.hostId, r.pct]));
+      serverBreakdown = enabledHosts.map((h) => ({
+        hostId: h.hostId,
+        name: h.name,
+        pct: byId.get(h.hostId) ?? null,
+        type: "server" as const,
+      }));
+    } catch (e) {
+      console.error("[orchestrator] getAvailability falhou", (e as Error).message);
+      // Fallback: usa espelho local (ServerEvent) — degrada mas não quebra.
+      serverBreakdown = await Promise.all(
+        enabledHosts.map(async (h) => ({
+          hostId: h.hostId,
+          name: h.name,
+          pct: await getServerSla(h.hostId, from, until),
+          type: "server" as const,
+        })),
+      );
+    }
+  }
 
   // Aplicações monitoradas internamente: SLA via WebAppEvent
   const appBreakdown: HostBreakdownItem[] = await Promise.all(

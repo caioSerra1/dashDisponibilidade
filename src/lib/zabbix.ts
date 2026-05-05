@@ -77,14 +77,19 @@ export interface HostAvailability {
 }
 
 /**
- * Keys de items que indicam "host respondendo" no Zabbix. Por host pegamos
- * o primeiro disponível dessa lista, na ordem.
+ * Padrões de NOME (case-insensitive) que identificam items de disponibilidade
+ * customizados que o user mantém no Zabbix com toda lógica de guardrails:
+ * queda de agente, latência, etc. O valor desses items é DIRETAMENTE a %
+ * de disponibilidade que aparece no widget "Disponibilidade" do dashboard.
  *
- * - `icmpping` retorna 1 quando o host responde ao ping ICMP, 0 quando não.
- * - `agent.ping` é o equivalente via Zabbix Agent.
- *
- * O dashboard nativo do Zabbix calcula "Disponibilidade %" via avg() do
- * mesmo item — replicamos exatamente essa lógica aqui.
+ * Buscamos o item por NAME_REGEX em vez de key — o user dá nome amigável
+ * tipo "Disponibilidade", "Plataforma Disponibilidade %", etc.
+ */
+const AVAILABILITY_NAME_PATTERNS = [/disponib/i, /availab/i];
+
+/**
+ * Fallback: keys padrão do Zabbix pra hosts que não têm item customizado
+ * de disponibilidade. Não tem os guardrails do user — usar como último recurso.
  */
 const AVAILABILITY_ITEM_KEYS = ["icmpping", "agent.ping"];
 
@@ -99,27 +104,48 @@ export async function getAvailability(
     const fromTs = Math.floor(from.getTime() / 1000);
     const toTs = Math.floor(to.getTime() / 1000);
 
-    // 1. Busca itens de ping/agent ping pra cada host. Cada host pode ter
-    //    mais de um item — pegamos o primeiro na ordem de preferência.
+    // 1. Busca TODOS os items dos hosts (não filtra por key — porque o user
+    //    tem items customizados de "Disponibilidade" com nomes amigáveis).
+    //    Vamos escolher por NAME primeiro, fallback pra icmpping/agent.ping.
     const items = await rpc<Array<{
       itemid: string;
       hostid: string;
+      name: string;
       key_: string;
       value_type: string;
+      units: string;
     }>>(
       "item.get",
       {
         hostids: hostIds,
-        search: { key_: "ping" },
-        searchByAny: true,
-        output: ["itemid", "hostid", "key_", "value_type"],
+        output: ["itemid", "hostid", "name", "key_", "value_type", "units"],
         monitored: true,
       },
       auth,
     );
 
-    // Escolhe o melhor item por host (icmpping > agent.ping > qualquer outro com "ping")
-    const itemByHost = new Map<string, { itemid: string; valueType: number }>();
+    // Prioridade na escolha do item:
+    //   1. Item cujo NAME bate em /disponib/i ou /availab/i (item customizado
+    //      do user, com guardrails do dashboard nativo)
+    //   2. Item com key_ = icmpping (calcula via avg dos pings)
+    //   3. Item com key_ = agent.ping
+    //   4. Qualquer item com "ping" no nome (último recurso)
+    const itemByHost = new Map<string, { itemid: string; valueType: number; isPercentItem: boolean }>();
+
+    // 1ª passada: items "Disponibilidade" customizados (valor é DIRETAMENTE %)
+    for (const item of items) {
+      if (itemByHost.has(item.hostid)) continue;
+      const matchesName = AVAILABILITY_NAME_PATTERNS.some((re) => re.test(item.name));
+      if (matchesName && (item.units === "%" || item.units === "")) {
+        itemByHost.set(item.hostid, {
+          itemid: item.itemid,
+          valueType: Number(item.value_type),
+          isPercentItem: true,
+        });
+      }
+    }
+
+    // 2ª passada: items de ping nativos (precisa avg pra virar %)
     for (const key of AVAILABILITY_ITEM_KEYS) {
       for (const item of items) {
         if (itemByHost.has(item.hostid)) continue;
@@ -127,22 +153,29 @@ export async function getAvailability(
           itemByHost.set(item.hostid, {
             itemid: item.itemid,
             valueType: Number(item.value_type),
+            isPercentItem: false,
           });
         }
       }
     }
-    // Fallback: qualquer item com "ping" no nome
+    // 3ª passada: qualquer item com "ping" no nome
     for (const item of items) {
       if (itemByHost.has(item.hostid)) continue;
-      itemByHost.set(item.hostid, {
-        itemid: item.itemid,
-        valueType: Number(item.value_type),
-      });
+      if (/ping/i.test(item.name) || /ping/i.test(item.key_)) {
+        itemByHost.set(item.hostid, {
+          itemid: item.itemid,
+          valueType: Number(item.value_type),
+          isPercentItem: false,
+        });
+      }
     }
 
     // 2. Pra cada host com item, busca histórico do período. Se history
     //    estiver vazio ou RPC falhar, retorna `null` (sem dados — caller
     //    decide o que fazer; NUNCA preenchemos com 100% fake).
+    //
+    //    - Item de %: valor já É a disponibilidade (avg direto)
+    //    - Item de ping: valor é 0/1; pct = avg * 100
     const results = await Promise.all(
       Array.from(itemByHost.entries()).map(async ([hostid, info]) => {
         try {
@@ -158,11 +191,16 @@ export async function getAvailability(
             auth,
           );
           if (history.length === 0) {
-            console.warn(`[zabbix] history vazia pra hostid=${hostid}`);
-            return { hostid, pct: null as number | null };
+            // History vazia = retenção do Zabbix expirou ou dados foram
+            // resetados no item. Nesses casos assumimos 100% (sem registro
+            // de incidentes naquele período = considerado up). Decisão de
+            // negócio: melhor que excluir o host da média.
+            console.warn(`[zabbix] history vazia pra hostid=${hostid}, assumindo 100%`);
+            return { hostid, pct: 100 as number | null };
           }
           const sum = history.reduce((acc, h) => acc + Number(h.value), 0);
-          const pct = (sum / history.length) * 100;
+          const avg = sum / history.length;
+          const pct = info.isPercentItem ? avg : avg * 100;
           return {
             hostid,
             pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,

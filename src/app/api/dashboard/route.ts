@@ -85,12 +85,18 @@ export async function GET(request: Request) {
     },
     orderBy: { date: "desc" },
   });
+  // Projeção: SOMENTE pontos acumulam linearmente. Disponibilidade é paga
+  // uma vez no fim do mês (não acumula por dia), então mantemos o valor
+  // atual da disponibilidade como projeção.
   const projecaoPontos = latestMonthSnap
     ? Math.round((latestMonthSnap.pontosAcumulados / diasDecorridos) * totalDays)
     : 0;
-  const projecaoValor = latestMonthSnap
-    ? Math.round((latestMonthSnap.valorParcial / diasDecorridos) * totalDays * 100) / 100
+  const projecaoValorPontos = projecaoPontos * config.valorPorPonto;
+  const projecaoValorDisponibilidade = latestMonthSnap
+    ? latestMonthSnap.valorDisponibilidade
     : 0;
+  const projecaoValor =
+    Math.round((projecaoValorPontos + projecaoValorDisponibilidade) * 100) / 100;
   const deltaDia = last && previous ? last.valorParcial - previous.valorParcial : 0;
 
   const hostBreakdown: HostBreakdownEntry[] =
