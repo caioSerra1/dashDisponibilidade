@@ -39,6 +39,7 @@ interface HostBreakdownEntry {
   hostId: string;
   name: string;
   pct: number;
+  type?: "server" | "app";
 }
 
 interface DashboardData {
@@ -233,7 +234,15 @@ export function DashboardView({
         <Kpi
           title="Disponibilidade média"
           value={`${(parcial?.sla ?? 0).toFixed(2)}%`}
-          helper={`baseada em ${parcial?.hostBreakdown.length ?? 0} servidores`}
+          helper={(() => {
+            const breakdown = parcial?.hostBreakdown ?? [];
+            const servers = breakdown.filter((b) => !("type" in b) || b.type === "server" || b.type == null).length;
+            const apps = breakdown.filter((b) => "type" in b && b.type === "app").length;
+            const parts: string[] = [];
+            if (servers > 0) parts.push(`${servers} servidor${servers > 1 ? "es" : ""}`);
+            if (apps > 0) parts.push(`${apps} aplicaç${apps > 1 ? "ões" : "ão"}`);
+            return parts.length > 0 ? `baseada em ${parts.join(" + ")}` : "sem targets";
+          })()}
           icon={Gauge}
         />
         <Kpi
