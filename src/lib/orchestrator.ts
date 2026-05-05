@@ -114,18 +114,23 @@ async function computeSlaMedio(
   }
 
   // Servidores: SLA lido DIRETAMENTE do dashboard "Disponibilidade" do
-  // Zabbix em runtime (item customizado com nome contendo "Disponib").
-  // Esse item já contém os guardrails do user (queda de agente, etc) —
-  // replicamos exatamente o que aparece no widget nativo.
-  // ServerEvent (espelho local) continua existindo só pra histórico/auditoria
-  // de INCIDENTES individuais (modal "Ver incidentes"), não pra SLA agregado.
+  // Zabbix em runtime via avg do history.get no período.
+  //
+  // Passamos availabilityItemId como override por host quando o admin
+  // configurou manualmente — garante que usamos EXATAMENTE o mesmo item
+  // que o widget do dashboard nativo usa (sem ambiguidade de pattern).
   let serverBreakdown: HostBreakdownItem[] = [];
   if (enabledHosts.length > 0) {
     try {
+      const itemOverrides: Record<string, string | null> = {};
+      for (const h of enabledHosts) {
+        if (h.availabilityItemId) itemOverrides[h.hostId] = h.availabilityItemId;
+      }
       const zabbixResults = await getAvailability(
         enabledHosts.map((h) => h.hostId),
         from,
         until,
+        itemOverrides,
       );
       const byId = new Map(zabbixResults.map((r) => [r.hostId, r.pct]));
       serverBreakdown = enabledHosts.map((h) => ({

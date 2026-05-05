@@ -95,11 +95,11 @@ export interface HostAvailability {
  */
 const AVAILABILITY_NAME_PATTERNS: Array<{ pattern: RegExp; priority: number }> = [
   // Prioridade alta: "Disponibilidade (%) - 30 dias" (período mensal — bate com SLA do mês)
-  { pattern: /disponibilidade\s*\(\s*%\s*\)\s*-?\s*30\s*dias/i, priority: 100 },
+  { pattern: /disponibilidade.{0,5}\(.{0,3}%.{0,3}\).{0,5}30.{0,3}dias/i, priority: 100 },
   // Prioridade média: "Disponibilidade (%) - 1h" ou "- 24h"
-  { pattern: /disponibilidade\s*\(\s*%\s*\)/i, priority: 50 },
+  { pattern: /disponibilidade.{0,5}\(.{0,3}%.{0,3}\)/i, priority: 50 },
   // Prioridade baixa: "Disponibilidade ICMP" (item de ping 0/1)
-  { pattern: /disponibilidade\s*icmp/i, priority: 10 },
+  { pattern: /disponibilidade.{0,5}icmp/i, priority: 10 },
 ];
 
 /**
@@ -112,6 +112,12 @@ export async function getAvailability(
   hostIds: readonly string[],
   from: Date,
   to: Date,
+  /**
+   * Override manual por host: mapa hostId → itemId. Quando definido pra
+   * um host, força usar esse item (ignora auto-detecção). Permite o
+   * admin escolher exatamente o item do widget do dashboard nativo.
+   */
+  itemOverrides: Record<string, string | null | undefined> = {},
 ): Promise<HostAvailability[]> {
   if (hostIds.length === 0) return [];
   const auth = await login();
@@ -179,6 +185,15 @@ export async function getAvailability(
       });
     }
 
+    // 0ª passada: OVERRIDES manuais do admin têm prioridade máxima.
+    for (const item of items) {
+      const overrideItemId = itemOverrides[item.hostid];
+      if (overrideItemId && item.itemid === overrideItemId) {
+        const isPercentItem = item.units === "%";
+        consider(item.hostid, item, isPercentItem, 1000);
+      }
+    }
+
     // 1ª passada: items "Disponibilidade (%)" customizados — valor é
     // DIRETAMENTE a porcentagem (units = "%"). Pega por prioridade.
     for (const item of items) {
@@ -208,28 +223,14 @@ export async function getAvailability(
       }
     }
 
-    // 2. Pra items de % (Disponibilidade do dashboard), usa LASTVALUE direto
-    //    — é exatamente o número que aparece no widget nativo do Zabbix.
-    //    Pra items de ping, usa history.get pra calcular avg do período.
+    // 2. Pra cada host, calcula SLA via avg do history.get NO PERÍODO.
+    //    Isso replica o que o widget do Zabbix mostra quando você filtra
+    //    por "últimos 30 dias": media dos valores naquela janela.
+    //
+    //    - Item de %: avg dos valores diretamente
+    //    - Item de ping: avg de 0/1 × 100
     const results = await Promise.all(
       Array.from(itemByHost.entries()).map(async ([hostid, info]) => {
-        // Item de % do dashboard: valor já É a disponibilidade.
-        if (info.isPercentItem) {
-          if (info.lastvalue == null || info.lastvalue === "") {
-            console.warn(`[zabbix] lastvalue ausente pra hostid=${hostid}, assumindo 100%`);
-            return { hostid, pct: 100 as number | null };
-          }
-          const pct = Number(info.lastvalue);
-          if (!Number.isFinite(pct)) {
-            return { hostid, pct: null as number | null };
-          }
-          return {
-            hostid,
-            pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,
-          };
-        }
-
-        // Item de ping (fallback): calcular avg via history.get
         try {
           const history = await rpc<Array<{ value: string }>>(
             "history.get",
@@ -243,12 +244,24 @@ export async function getAvailability(
             auth,
           );
           if (history.length === 0) {
-            console.warn(`[zabbix] history vazia pra hostid=${hostid}, assumindo 100%`);
-            return { hostid, pct: 100 as number | null };
+            // Fallback: se não tem histórico no período (retenção expirou
+            // ou item recém-criado), usa o lastvalue conhecido.
+            const fallback = info.lastvalue != null && info.lastvalue !== ""
+              ? Number(info.lastvalue)
+              : null;
+            if (fallback == null || !Number.isFinite(fallback)) {
+              console.warn(`[zabbix] history vazia + sem lastvalue pra hostid=${hostid}, assumindo 100%`);
+              return { hostid, pct: 100 as number | null };
+            }
+            const pct = info.isPercentItem ? fallback : fallback * 100;
+            return {
+              hostid,
+              pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,
+            };
           }
           const sum = history.reduce((acc, h) => acc + Number(h.value), 0);
           const avg = sum / history.length;
-          const pct = avg * 100; // ping items: avg de 0/1 vira porcentagem
+          const pct = info.isPercentItem ? avg : avg * 100;
           return {
             hostid,
             pct: Math.max(0, Math.min(100, Math.round(pct * 100) / 100)) as number | null,

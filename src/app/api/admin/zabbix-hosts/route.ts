@@ -14,15 +14,21 @@ export async function GET() {
   return NextResponse.json({ hosts });
 }
 
-const patchSchema = z.object({ hostId: z.string(), enabled: z.boolean() });
+const patchSchema = z.object({
+  hostId: z.string(),
+  enabled: z.boolean().optional(),
+  /** Item ID do Zabbix pra usar como fonte do SLA. null = limpa override. */
+  availabilityItemId: z.string().nullable().optional(),
+});
 
 export async function PATCH(request: Request) {
   if (!(await requireAdmin())) return NextResponse.json({ error: "forbidden" }, { status: 403 });
   const parsed = patchSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const { hostId, ...data } = parsed.data;
   await prisma.zabbixHost.update({
-    where: { hostId: parsed.data.hostId },
-    data: { enabled: parsed.data.enabled },
+    where: { hostId },
+    data,
   });
   return NextResponse.json({ ok: true });
 }

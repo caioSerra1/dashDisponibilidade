@@ -68,10 +68,14 @@ model SlaTier {
 }
 
 model ZabbixHost {
-  hostId    String   @id
-  name      String
-  enabled   Boolean  @default(false)
-  lastSync  DateTime?
+  hostId             String   @id
+  name               String
+  enabled            Boolean  @default(false)
+  lastSync           DateTime?
+  /// Item ID específico do Zabbix pra calcular SLA desse host. Quando setado,
+  /// substitui a auto-detecção por pattern. Permite o admin escolher exatamente
+  /// o mesmo item que o widget "Disponibilidade" do dashboard nativo usa.
+  availabilityItemId String?
 }
 
 model WebApp {

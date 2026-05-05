@@ -12,6 +12,15 @@ interface Host {
   name: string;
   enabled: boolean;
   lastSync: string | null;
+  availabilityItemId: string | null;
+}
+
+interface ZabbixItem {
+  itemid: string;
+  name: string;
+  key_: string;
+  units: string;
+  lastvalue?: string;
 }
 
 interface WebApp {
@@ -92,6 +101,17 @@ export function ZabbixView() {
     setSyncing(false);
     setMsg(r.ok ? `Importados: ${r.imported}` : `Erro: ${r.error}`);
     await reload();
+  }
+
+  async function setAvailabilityItem(hostId: string, itemid: string | null) {
+    await fetch("/api/admin/zabbix-hosts", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hostId, availabilityItemId: itemid }),
+    });
+    setHosts((prev) =>
+      prev.map((h) => (h.hostId === hostId ? { ...h, availabilityItemId: itemid } : h)),
+    );
   }
 
   async function toggle(hostId: string, enabled: boolean) {
@@ -190,12 +210,17 @@ export function ZabbixView() {
               Nenhum host. Clique em Sincronizar para buscar do Zabbix.
             </p>
           ) : (
+            <>
+              <p className="text-xs text-muted-foreground mb-3">
+                Pra cada servidor habilitado, escolha o item do Zabbix que será
+                usado como fonte do SLA. Se deixar em branco, o sistema escolhe
+                automaticamente o melhor item de &quot;Disponibilidade&quot;.
+              </p>
             <table className="w-full text-sm">
               <thead className="text-left text-muted-foreground">
                 <tr>
                   <th className="py-2">Servidor</th>
-                  <th className="py-2">ID</th>
-                  <th className="py-2">Última sinc.</th>
+                  <th className="py-2">Item de SLA</th>
                   <th className="py-2">Habilitado</th>
                   <th className="py-2 text-right"></th>
                 </tr>
@@ -203,10 +228,24 @@ export function ZabbixView() {
               <tbody>
                 {hosts.map((h) => (
                   <tr key={h.hostId} className="border-t">
-                    <td className="py-2">{h.name}</td>
-                    <td className="py-2 text-muted-foreground">{h.hostId}</td>
-                    <td className="py-2">{h.lastSync ? formatDate(h.lastSync) : "—"}</td>
-                    <td className="py-2">
+                    <td className="py-2 align-top">
+                      <div className="font-medium">{h.name}</div>
+                      <div className="text-[10px] text-muted-foreground">
+                        ID {h.hostId} · sinc. {h.lastSync ? formatDate(h.lastSync) : "—"}
+                      </div>
+                    </td>
+                    <td className="py-2 align-top max-w-md">
+                      {h.enabled ? (
+                        <ItemPicker
+                          hostId={h.hostId}
+                          selectedItemId={h.availabilityItemId}
+                          onChange={(itemid) => setAvailabilityItem(h.hostId, itemid)}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 align-top">
                       <Switch checked={h.enabled} onCheckedChange={(v) => toggle(h.hostId, v)} />
                     </td>
                     <td className="py-2 text-right">
@@ -224,6 +263,7 @@ export function ZabbixView() {
                 ))}
               </tbody>
             </table>
+            </>
           )}
         </CardContent>
       </Card>
@@ -492,6 +532,72 @@ export function ZabbixView() {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ItemPicker({
+  hostId,
+  selectedItemId,
+  onChange,
+}: {
+  hostId: string;
+  selectedItemId: string | null;
+  onChange: (itemid: string | null) => void;
+}) {
+  const [items, setItems] = useState<ZabbixItem[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    fetch(`/api/admin/zabbix-hosts/${hostId}/items`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setItems(data.items);
+        }
+      })
+      .catch((e) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [hostId]);
+
+  if (loading) return <span className="text-xs text-muted-foreground">Carregando items…</span>;
+  if (error)
+    return <span className="text-xs text-red-500" title={error}>Falha ao listar items</span>;
+  if (!items || items.length === 0)
+    return <span className="text-xs text-muted-foreground">Sem items relevantes</span>;
+
+  const selectedItem = items.find((i) => i.itemid === selectedItemId);
+
+  return (
+    <div>
+      <select
+        value={selectedItemId ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="flex h-9 w-full rounded-md border border-input bg-background px-2 py-1 text-xs"
+      >
+        <option value="">Auto-detecção (recomendado)</option>
+        {items.map((i) => (
+          <option key={i.itemid} value={i.itemid}>
+            {i.name}
+            {i.units === "%" ? ` — ${i.lastvalue ?? "?"}%` : ""}
+          </option>
+        ))}
+      </select>
+      {selectedItem && selectedItem.units === "%" && (
+        <p className="text-[10px] text-muted-foreground mt-1">
+          Valor atual no Zabbix: <strong>{selectedItem.lastvalue}%</strong>
+        </p>
       )}
     </div>
   );
