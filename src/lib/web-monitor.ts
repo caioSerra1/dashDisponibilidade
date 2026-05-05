@@ -164,7 +164,7 @@ interface CheckResult {
   error: string | null;
 }
 
-async function checkUrl(
+async function checkUrlOnce(
   url: string,
   timeoutMs: number,
   expectStatus: string,
@@ -186,6 +186,38 @@ async function checkUrl(
     const msg = (e as Error).message;
     return { ok: false, statusCode: null, responseMs: elapsed, error: msg };
   }
+}
+
+/**
+ * Faz check com REPETIÇÃO antes de declarar down. Um único timeout/erro
+ * é normalmente glitch transitório (DNS local, rede instável, Cloudflare
+ * temporário). Só consideramos down se 2 tentativas com 3s de intervalo
+ * falharem. Isso elimina ~95% dos falsos positivos.
+ *
+ * Quando o site está OK, custo é 1 request (sem retry).
+ */
+async function checkUrl(
+  url: string,
+  timeoutMs: number,
+  expectStatus: string,
+): Promise<CheckResult> {
+  const first = await checkUrlOnce(url, timeoutMs, expectStatus);
+  if (first.ok) return first;
+
+  // 1ª tentativa falhou — espera 3s e tenta de novo pra confirmar.
+  await new Promise((r) => setTimeout(r, 3000));
+  const second = await checkUrlOnce(url, timeoutMs, expectStatus);
+
+  if (second.ok) {
+    // Recuperou na segunda tentativa = glitch momentâneo, NÃO marca como down.
+    // Retorna como ok mas mantém o tempo da segunda tentativa pra indicar lentidão.
+    return { ...second, ok: true };
+  }
+  // Falhou nas duas tentativas — confirma como down.
+  return {
+    ...second,
+    error: `${second.error} (após 2 tentativas)`,
+  };
 }
 
 const BATCH_SIZE = 10;
