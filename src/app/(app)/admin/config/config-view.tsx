@@ -266,28 +266,13 @@ export function ConfigView() {
                   }
                 />
               </div>
-              <div className="flex-1 space-y-1.5">
-                <Label className="text-xs">Paga (R$)</Label>
-                <NumberField
-                  value={
-                    Math.round(
-                      (t.payoutPct / 100) * (cfg.valorDisponibilidade100 || 0) * 100,
-                    ) / 100
-                  }
-                  onChange={(reaisVal) => {
-                    const teto = cfg.valorDisponibilidade100 || 1;
-                    const payoutPct = teto > 0 ? (reaisVal / teto) * 100 : 0;
-                    setTiers(
-                      tiers.map((x, j) =>
-                        j === i ? { ...x, payoutPct: Math.round(payoutPct * 100) / 100 } : x,
-                      ),
-                    );
-                  }}
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  = {t.payoutPct.toFixed(2)}% do teto (R$ {cfg.valorDisponibilidade100})
-                </p>
-              </div>
+              <TierPayoutInput
+                payoutPct={t.payoutPct}
+                teto={cfg.valorDisponibilidade100 || 0}
+                onChange={(payoutPct) =>
+                  setTiers(tiers.map((x, j) => (j === i ? { ...x, payoutPct } : x)))
+                }
+              />
               <Button
                 type="button"
                 variant="ghost"
@@ -595,6 +580,58 @@ function LogoUploader() {
         </div>
       </div>
       {msg && <p className="text-xs text-success">{msg}</p>}
+    </div>
+  );
+}
+
+/**
+ * Input de payout em R$ com state local pra evitar round-trip
+ * R$ → % → R$ que perde precisão (digitar 1000 virava 999.96).
+ *
+ * O user digita o R$ EXATO que quer. Só quando perde foco (blur),
+ * confirmamos o valor convertendo pra payoutPct e propagando pro state pai.
+ */
+function TierPayoutInput({
+  payoutPct,
+  teto,
+  onChange,
+}: {
+  payoutPct: number;
+  teto: number;
+  onChange: (payoutPct: number) => void;
+}) {
+  // Computa R$ inicial a partir do payoutPct (sem arredondar a precisão).
+  const valorReais = teto > 0 ? (payoutPct / 100) * teto : 0;
+  // State local pra preservar exatamente o que o user digitou.
+  const [draftReais, setDraftReais] = useState<number>(valorReais);
+
+  // Quando o payoutPct vier do parent (mudança externa, ex: outro tier),
+  // sincroniza o draft.
+  useEffect(() => {
+    setDraftReais(valorReais);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payoutPct, teto]);
+
+  function commit(reais: number) {
+    if (teto <= 0) return;
+    const newPayoutPct = (reais / teto) * 100;
+    // Mantém precisão: NÃO arredonda. payoutPct fica com decimais reais.
+    onChange(newPayoutPct);
+  }
+
+  return (
+    <div className="flex-1 space-y-1.5">
+      <Label className="text-xs">Paga (R$)</Label>
+      <NumberField
+        value={draftReais}
+        onChange={(v) => {
+          setDraftReais(v);
+          commit(v); // commit imediato (preserva valor digitado)
+        }}
+      />
+      <p className="text-[10px] text-muted-foreground">
+        = {payoutPct.toFixed(2)}% do teto (R$ {teto})
+      </p>
     </div>
   );
 }
