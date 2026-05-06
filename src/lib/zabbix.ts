@@ -157,6 +157,7 @@ export async function getAvailability(
     // porque float dá 99.99%, uint trunca pra 99% (perda de precisão).
     const itemByHost = new Map<string, {
       itemid: string;
+      itemName: string;
       valueType: number;
       lastvalue: string | undefined;
       isPercentItem: boolean;
@@ -165,7 +166,7 @@ export async function getAvailability(
 
     function consider(
       hostid: string,
-      item: { itemid: string; value_type: string; lastvalue?: string },
+      item: { itemid: string; name: string; value_type: string; lastvalue?: string },
       isPercentItem: boolean,
       priority: number,
     ) {
@@ -178,6 +179,7 @@ export async function getAvailability(
       }
       itemByHost.set(hostid, {
         itemid: item.itemid,
+        itemName: item.name,
         valueType,
         lastvalue: item.lastvalue,
         isPercentItem,
@@ -229,8 +231,41 @@ export async function getAvailability(
     //
     //    - Item de %: avg dos valores diretamente
     //    - Item de ping: avg de 0/1 × 100
+    // Items cujo NOME indica janela rolante (Zabbix calcula a janela
+    // internamente — o lastvalue JÁ é o SLA acumulado dessa janela).
+    // Ex: "Disponibilidade (%) - 30 dias", "Plataforma HTTP - 30d".
+    // Pra esses, usar lastvalue direto. Calcular avg do history aqui
+    // seria "média de uma média rolante" — número diferente do widget.
+    const ROLLING_WINDOW_PATTERNS = [
+      /\b30\s*dias\b/i,
+      /\b30d\b/i,
+      /\b7\s*dias\b/i,
+      /\b7d\b/i,
+      /\bmonth\b/i,
+      /\bmensal\b/i,
+    ];
+
     const results = await Promise.all(
       Array.from(itemByHost.entries()).map(async ([hostid, info]) => {
+        const isRollingWindow =
+          info.isPercentItem &&
+          ROLLING_WINDOW_PATTERNS.some((p) => p.test(info.itemName));
+
+        // Janela rolante → lastvalue direto (= o que aparece no widget)
+        if (isRollingWindow) {
+          if (info.lastvalue == null || info.lastvalue === "") {
+            console.warn(`[zabbix] lastvalue ausente pra rolling item hostid=${hostid}`);
+            return { hostid, pct: null as number | null };
+          }
+          const pct = Number(info.lastvalue);
+          if (!Number.isFinite(pct)) return { hostid, pct: null as number | null };
+          return {
+            hostid,
+            pct: Math.max(0, Math.min(100, Math.floor(pct * 100) / 100)) as number | null,
+          };
+        }
+
+        // Itens instantâneos (1h, ping) → avg do history no período
         try {
           const history = await rpc<Array<{ value: string }>>(
             "history.get",
@@ -244,8 +279,6 @@ export async function getAvailability(
             auth,
           );
           if (history.length === 0) {
-            // Fallback: se não tem histórico no período (retenção expirou
-            // ou item recém-criado), usa o lastvalue conhecido.
             const fallback = info.lastvalue != null && info.lastvalue !== ""
               ? Number(info.lastvalue)
               : null;
