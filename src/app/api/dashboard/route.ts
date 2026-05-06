@@ -11,6 +11,8 @@ import { computeStreak } from "@/lib/gamification";
 import { loadConfig } from "@/lib/config";
 import { computePartial } from "@/lib/calculate";
 import { getTeamSlaForPeriod } from "@/lib/orchestrator";
+import { getClosedAndPendingTasks } from "@/lib/clickup";
+import { classifyTask } from "@/lib/metrics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -89,12 +91,41 @@ export async function GET(request: Request) {
     },
     orderBy: { date: "desc" },
   });
-  // Projeção: SOMENTE pontos acumulam linearmente. Disponibilidade é paga
-  // uma vez no fim do mês (não acumula por dia). Recalcula via computePartial
-  // com SLA + tiers ATUAIS pra refletir mudanças de config.
-  const projecaoPontos = latestMonthSnap
-    ? Math.round((latestMonthSnap.pontosAcumulados / diasDecorridos) * totalDays)
-    : 0;
+  // Projeção: pontos atuais + pontos pendentes do user no ClickUp.
+  // Mais honesto que extrapolação linear — reflete o que de fato pode
+  // ser entregue até o fim do mês baseado nas tasks atribuídas.
+  const pontosAtuais = latestMonthSnap?.pontosAcumulados ?? 0;
+  let pontosPendentes = 0;
+  let tasksPendentes = 0;
+  const userClickup = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { clickupUserId: true },
+  });
+  if (userClickup?.clickupUserId) {
+    try {
+      const { pending } = await getClosedAndPendingTasks(
+        userClickup.clickupUserId,
+        projectionMonth.from,
+        projectionMonth.to,
+      );
+      // Só conta pontos de tasks classificadas como DEV (sprint/backlog).
+      // Suporte com points NÃO pontua, mesmo que pendente.
+      for (const t of pending) {
+        const type = classifyTask(
+          { listId: t.listId, folderId: t.folderId, points: t.points },
+          config.taskClassification,
+        );
+        if (type === "dev" && typeof t.points === "number" && t.points > 0) {
+          pontosPendentes += t.points;
+          tasksPendentes += 1;
+        }
+      }
+    } catch (e) {
+      console.error("[dashboard] falha ao buscar pendentes ClickUp", (e as Error).message);
+    }
+  }
+
+  const projecaoPontos = pontosAtuais + pontosPendentes;
   const projecaoCalc = latestMonthSnap
     ? computePartial({
         pontosMes: projecaoPontos,
@@ -153,6 +184,9 @@ export async function GET(request: Request) {
       : null,
     projecao: {
       pontos: projecaoPontos,
+      pontosAtuais,
+      pontosPendentes,
+      tasksPendentes,
       valorTotal: projecaoValor,
       deltaDia,
     },

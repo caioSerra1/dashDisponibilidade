@@ -58,7 +58,7 @@ interface AppSummary {
 }
 
 interface DashboardData {
-  period: { from: string; to: string; days: number };
+  period: { from: string; to: string; label: string };
   summary: {
     aggregateSlaPct: number;
     totalIncidents: number;
@@ -104,8 +104,23 @@ const RANGES = [
   { days: 90, label: "90d" },
 ];
 
+type PeriodMode = { kind: "rolling"; days: number } | { kind: "month"; year: number; month: number };
+
+function monthOptions(): Array<{ year: number; month: number; label: string }> {
+  const now = new Date();
+  const opts: Array<{ year: number; month: number; label: string }> = [];
+  for (let i = 0; i < 6; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const year = d.getUTCFullYear();
+    const month = d.getUTCMonth() + 1;
+    const label = d.toLocaleDateString("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" });
+    opts.push({ year, month, label });
+  }
+  return opts;
+}
+
 export function MonitoringView() {
-  const [days, setDays] = useState(30);
+  const [period, setPeriod] = useState<PeriodMode>({ kind: "rolling", days: 30 });
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshedAt, setRefreshedAt] = useState<string>("");
@@ -118,10 +133,24 @@ export function MonitoringView() {
   const [events, setEvents] = useState<EventsData | null>(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
 
+  // dias efetivos pra timeline endpoint (que usa days). Pra month: calcula
+  // quantos dias do mês até hoje (ou total do mês se passado).
+  const effectiveDays = (() => {
+    if (period.kind === "rolling") return period.days;
+    const now = new Date();
+    const startOfMonth = new Date(Date.UTC(period.year, period.month - 1, 1));
+    const endOfMonth = new Date(Date.UTC(period.year, period.month, 0, 23, 59, 59));
+    const end = now < endOfMonth ? now : endOfMonth;
+    return Math.max(1, Math.ceil((end.getTime() - startOfMonth.getTime()) / (24 * 3600 * 1000)));
+  })();
+
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`/api/admin/availability/dashboard?days=${days}`, {
+      const qs = period.kind === "rolling"
+        ? `days=${period.days}`
+        : `year=${period.year}&month=${period.month}`;
+      const r = await fetch(`/api/admin/availability/dashboard?${qs}`, {
         cache: "no-store",
       });
       const json = await r.json();
@@ -132,7 +161,7 @@ export function MonitoringView() {
     } finally {
       setLoading(false);
     }
-  }, [days]);
+  }, [period]);
 
   useEffect(() => {
     reload();
@@ -143,7 +172,7 @@ export function MonitoringView() {
 
   async function openDrilldown(target: { type: "server" | "app"; id: string; name: string }) {
     setDrilldown(target);
-    await loadDrilldown(target, days <= 7 ? "hour" : "day");
+    await loadDrilldown(target, effectiveDays <= 7 ? "hour" : "day");
   }
 
   async function loadDrilldown(
@@ -156,7 +185,7 @@ export function MonitoringView() {
     try {
       const [tlRes, evRes] = await Promise.all([
         fetch(
-          `/api/admin/availability/timeline?type=${target.type}&id=${encodeURIComponent(target.id)}&days=${days}&bucket=${bucket}`,
+          `/api/admin/availability/timeline?type=${target.type}&id=${encodeURIComponent(target.id)}&days=${effectiveDays}&bucket=${bucket}`,
         ).then((x) => x.json()),
         fetch(
           `/api/admin/availability/events?type=${target.type}&id=${encodeURIComponent(target.id)}`,
@@ -188,14 +217,14 @@ export function MonitoringView() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <div className="inline-flex rounded-md border bg-card p-1 text-xs">
             {RANGES.map((r) => (
               <button
                 key={r.days}
-                onClick={() => setDays(r.days)}
+                onClick={() => setPeriod({ kind: "rolling", days: r.days })}
                 className={`px-3 py-1.5 rounded ${
-                  days === r.days
+                  period.kind === "rolling" && period.days === r.days
                     ? "bg-primary text-primary-foreground font-medium"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
@@ -204,6 +233,22 @@ export function MonitoringView() {
               </button>
             ))}
           </div>
+          <select
+            value={period.kind === "month" ? `${period.year}-${period.month}` : ""}
+            onChange={(e) => {
+              if (!e.target.value) return;
+              const [y, m] = e.target.value.split("-").map(Number);
+              setPeriod({ kind: "month", year: y!, month: m! });
+            }}
+            className="h-8 rounded-md border bg-card px-2 text-xs"
+          >
+            <option value="">Filtrar por mês…</option>
+            {monthOptions().map((o) => (
+              <option key={`${o.year}-${o.month}`} value={`${o.year}-${o.month}`}>
+                {o.label}
+              </option>
+            ))}
+          </select>
           <Button
             onClick={reload}
             disabled={loading}
@@ -237,7 +282,7 @@ export function MonitoringView() {
               icon={<AlertTriangle className="h-4 w-4" />}
               label="Incidentes"
               value={String(data.summary.totalIncidents)}
-              helper={`em ${data.period.days}d`}
+              helper={`em ${data.period.label}`}
             />
             <KpiCard
               icon={<Clock className="h-4 w-4" />}
@@ -255,7 +300,7 @@ export function MonitoringView() {
           {/* Gráfico agregado (todos targets em linhas separadas) */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">SLA diário ({data.period.days}d)</CardTitle>
+              <CardTitle className="text-base">SLA diário ({data.period.label})</CardTitle>
               <p className="text-xs text-muted-foreground">
                 100% = sem indisponibilidade naquele dia. Zoom out (90d) revela tendências.
               </p>
@@ -346,7 +391,7 @@ export function MonitoringView() {
       {drilldown && (
         <DrilldownModal
           target={drilldown}
-          days={days}
+          days={effectiveDays}
           timeline={timeline}
           events={events}
           loading={timelineLoading}

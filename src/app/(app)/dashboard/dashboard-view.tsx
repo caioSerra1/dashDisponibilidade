@@ -55,7 +55,14 @@ interface DashboardData {
     hostBreakdown: HostBreakdownEntry[];
   } | null;
   suporte: SuporteData | null;
-  projecao: { pontos: number; valorTotal: number; deltaDia: number };
+  projecao: {
+    pontos: number;
+    pontosAtuais: number;
+    pontosPendentes: number;
+    tasksPendentes: number;
+    valorTotal: number;
+    deltaDia: number;
+  };
   snapshots: Array<{ date: string; valorParcial: number; pontos: number; sla: number }>;
   history: Array<{
     year: number;
@@ -276,7 +283,9 @@ export function DashboardView({
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <p className="text-xs text-muted-foreground">Se mantiver o ritmo até o fim do mês</p>
+              <p className="text-xs text-muted-foreground">
+                Se entregar todas as tasks pendentes até o fim do mês
+              </p>
               <p className="text-3xl font-bold text-primary mt-1">
                 {formatBRL(data.projecao.valorTotal)}
               </p>
@@ -285,6 +294,10 @@ export function DashboardView({
               <div className="rounded-md border p-2.5">
                 <p className="text-xs text-muted-foreground">Pontos projetados</p>
                 <p className="font-semibold">{data.projecao.pontos}</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  {data.projecao.pontosAtuais} atuais + {data.projecao.pontosPendentes} pendentes
+                  {data.projecao.tasksPendentes > 0 && ` (${data.projecao.tasksPendentes} ${data.projecao.tasksPendentes === 1 ? "task" : "tasks"})`}
+                </p>
               </div>
               <div className="rounded-md border p-2.5">
                 <p className="text-xs text-muted-foreground">Dias restantes</p>
