@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { RefreshCw, Plus, Trash2, ExternalLink, History, X } from "lucide-react";
+import { RefreshCw, Plus, Trash2, ExternalLink, History, X, Pencil } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -71,6 +71,8 @@ export function ZabbixView() {
     events: AvailabilityEvent[];
   } | null>(null);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [editingApp, setEditingApp] = useState<WebApp | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // form
   const [newName, setNewName] = useState("");
@@ -157,6 +159,31 @@ export function ZabbixView() {
       body: JSON.stringify({ enabled }),
     });
     setApps((prev) => prev.map((a) => (a.id === id ? { ...a, enabled } : a)));
+  }
+
+  async function saveAppEdit() {
+    if (!editingApp) return;
+    setSavingEdit(true);
+    try {
+      const r = await fetch(`/api/admin/web-apps/${editingApp.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editingApp.name,
+          url: editingApp.url,
+          timeoutMs: editingApp.timeoutMs,
+          expectStatus: editingApp.expectStatus,
+        }),
+      }).then((x) => x.json());
+      if (r.ok) {
+        setEditingApp(null);
+        await reloadApps();
+      } else {
+        setAppMsg(`Erro: ${typeof r.error === "string" ? r.error : "validação falhou"}`);
+      }
+    } finally {
+      setSavingEdit(false);
+    }
   }
 
   async function deleteApp(id: string) {
@@ -423,6 +450,15 @@ export function ZabbixView() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => setEditingApp({ ...a })}
+                          aria-label="Editar"
+                          title="Editar"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => deleteApp(a.id)}
                           aria-label="Excluir"
                         >
@@ -529,6 +565,89 @@ export function ZabbixView() {
                   )}
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingApp && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setEditingApp(null)}
+        >
+          <div
+            className="bg-card rounded-lg shadow-lg max-w-lg w-full p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold">Editar aplicação</h3>
+              <Button variant="ghost" size="sm" onClick={() => setEditingApp(null)} aria-label="Fechar">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  Nome
+                </label>
+                <Input
+                  value={editingApp.name}
+                  onChange={(e) => setEditingApp({ ...editingApp, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground block mb-1">
+                  URL
+                </label>
+                <Input
+                  value={editingApp.url}
+                  onChange={(e) => setEditingApp({ ...editingApp, url: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">
+                    Resposta HTTP esperada
+                  </label>
+                  <select
+                    value={editingApp.expectStatus}
+                    onChange={(e) =>
+                      setEditingApp({ ...editingApp, expectStatus: e.target.value })
+                    }
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="2xx">2xx — Qualquer sucesso</option>
+                    <option value="2xx,3xx">2xx ou 3xx</option>
+                    <option value="200">Apenas 200 OK</option>
+                    <option value="200,301,302">200, 301 ou 302</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">
+                    Timeout (segundos)
+                  </label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={Math.round(editingApp.timeoutMs / 1000)}
+                    onChange={(e) =>
+                      setEditingApp({
+                        ...editingApp,
+                        timeoutMs: Math.max(1, Math.min(60, Number(e.target.value) || 10)) * 1000,
+                      })
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t">
+              <Button variant="outline" size="sm" onClick={() => setEditingApp(null)}>
+                Cancelar
+              </Button>
+              <Button onClick={saveAppEdit} disabled={savingEdit} size="sm">
+                {savingEdit ? "Salvando…" : "Salvar"}
+              </Button>
             </div>
           </div>
         </div>

@@ -385,6 +385,9 @@ export function MonitoringView() {
               )}
             </CardContent>
           </Card>
+
+          {/* Histórico global de incidentes */}
+          <IncidentsSection period={period} />
         </>
       )}
 
@@ -883,4 +886,163 @@ function formatMinutes(min: number): string {
   if (h < 24) return `${h.toFixed(1)}h`;
   const d = h / 24;
   return `${d.toFixed(1)}d`;
+}
+
+interface IncidentItem {
+  id: string;
+  type: "server" | "app";
+  targetName: string;
+  targetUrl: string | null;
+  kind: string;
+  startedAt: string;
+  endedAt: string | null;
+  durationMinutes: number;
+  ongoing: boolean;
+  severity: number | null;
+  triggerName: string | null;
+  itemKey: string | null;
+  statusCode: number | null;
+  errorMessage: string | null;
+}
+
+function IncidentsSection({ period }: { period: PeriodMode }) {
+  const [data, setData] = useState<{
+    summary: { total: number; ongoing: number; totalDownMinutes: number };
+    incidents: IncidentItem[];
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<"all" | "server" | "app">("all");
+
+  useEffect(() => {
+    setLoading(true);
+    const qs = period.kind === "rolling"
+      ? `days=${period.days}`
+      : `year=${period.year}&month=${period.month}`;
+    fetch(`/api/admin/availability/incidents?${qs}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then(setData)
+      .finally(() => setLoading(false));
+  }, [period]);
+
+  const filtered = data?.incidents.filter((i) => filter === "all" || i.type === filter) ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <History className="h-4 w-4 text-primary" />
+          Histórico de incidentes
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Todas as quedas registradas no período. Clique pra detalhe.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2 mb-3">
+          <div className="inline-flex rounded-md border bg-card p-0.5 text-xs">
+            {(["all", "server", "app"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-2.5 py-1 rounded ${
+                  filter === f
+                    ? "bg-primary text-primary-foreground font-medium"
+                    : "text-muted-foreground"
+                }`}
+              >
+                {f === "all" ? "Todos" : f === "server" ? "Servidores" : "Aplicações"}
+              </button>
+            ))}
+          </div>
+          {data && (
+            <span className="text-xs text-muted-foreground">
+              {filtered.length} de {data.summary.total} · {formatMinutes(data.summary.totalDownMinutes)} total fora
+              {data.summary.ongoing > 0 && (
+                <span className="text-red-600 font-medium"> · {data.summary.ongoing} em andamento</span>
+              )}
+            </span>
+          )}
+        </div>
+        {loading ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">Carregando…</p>
+        ) : filtered.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            Nenhum incidente no período. 🎉
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-left text-muted-foreground">
+                <tr className="border-b">
+                  <th className="py-2 pr-3">Target</th>
+                  <th className="py-2 pr-3">Tipo</th>
+                  <th className="py-2 pr-3">Início</th>
+                  <th className="py-2 pr-3">Fim</th>
+                  <th className="py-2 pr-3">Duração</th>
+                  <th className="py-2">Detalhe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.slice(0, 100).map((e) => (
+                  <tr key={e.id} className="border-b align-top">
+                    <td className="py-2 pr-3">
+                      <div className="font-medium">{e.targetName}</div>
+                      {e.targetUrl && (
+                        <a
+                          href={e.targetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-muted-foreground hover:text-primary"
+                        >
+                          {e.targetUrl}
+                        </a>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {e.type === "server" ? (
+                        <span className="inline-flex items-center gap-1 text-muted-foreground">
+                          <Server className="h-3 w-3" />Servidor
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-muted-foreground">
+                          <Globe className="h-3 w-3" />Aplicação
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums whitespace-nowrap">
+                      {new Date(e.startedAt).toLocaleString("pt-BR")}
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums whitespace-nowrap">
+                      {e.ongoing ? (
+                        <span className="text-red-500 font-medium">em andamento</span>
+                      ) : e.endedAt ? (
+                        new Date(e.endedAt).toLocaleString("pt-BR")
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 tabular-nums">{formatMinutes(e.durationMinutes)}</td>
+                    <td className="py-2 text-muted-foreground">
+                      {e.kind === "monitor-gap" && (
+                        <span className="text-amber-600">monitor offline · </span>
+                      )}
+                      {e.statusCode != null && <span>HTTP {e.statusCode}</span>}
+                      {e.severity != null && <span>severidade {e.severity}</span>}
+                      {e.triggerName && <span> · {e.triggerName}</span>}
+                      {e.errorMessage && <span> · {e.errorMessage}</span>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {filtered.length > 100 && (
+              <p className="text-[10px] text-muted-foreground mt-2 text-center">
+                Mostrando 100 mais recentes (de {filtered.length}). Filtre por mês pra ver tudo.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
