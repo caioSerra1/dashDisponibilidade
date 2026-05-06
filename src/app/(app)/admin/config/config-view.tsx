@@ -267,13 +267,26 @@ export function ConfigView() {
                 />
               </div>
               <div className="flex-1 space-y-1.5">
-                <Label className="text-xs">Paga (%)</Label>
+                <Label className="text-xs">Paga (R$)</Label>
                 <NumberField
-                  value={t.payoutPct}
-                  onChange={(v) =>
-                    setTiers(tiers.map((x, j) => (j === i ? { ...x, payoutPct: v } : x)))
+                  value={
+                    Math.round(
+                      (t.payoutPct / 100) * (cfg.valorDisponibilidade100 || 0) * 100,
+                    ) / 100
                   }
+                  onChange={(reaisVal) => {
+                    const teto = cfg.valorDisponibilidade100 || 1;
+                    const payoutPct = teto > 0 ? (reaisVal / teto) * 100 : 0;
+                    setTiers(
+                      tiers.map((x, j) =>
+                        j === i ? { ...x, payoutPct: Math.round(payoutPct * 100) / 100 } : x,
+                      ),
+                    );
+                  }}
                 />
+                <p className="text-[10px] text-muted-foreground">
+                  = {t.payoutPct.toFixed(2)}% do teto (R$ {cfg.valorDisponibilidade100})
+                </p>
               </div>
               <Button
                 type="button"
