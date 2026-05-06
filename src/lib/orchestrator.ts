@@ -95,6 +95,20 @@ export interface HostBreakdownItem {
   type?: "server" | "app";
 }
 
+/**
+ * Wrapper público de computeSlaMedio pra ser usado por endpoints que
+ * precisam do SLA da equipe num período. Sempre lê AO VIVO (não cacheia
+ * em snapshot) — garante que mudanças de tier/config/host sejam refletidas
+ * imediatamente em todas as telas.
+ */
+export async function getTeamSlaForPeriod(
+  year: number,
+  month: number,
+  until: Date,
+): Promise<{ media: number; breakdown: HostBreakdownItem[] }> {
+  return computeSlaMedio(year, month, until);
+}
+
 async function computeSlaMedio(
   year: number,
   month: number,

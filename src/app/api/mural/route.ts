@@ -10,6 +10,8 @@ import {
 import { getTasksForUser } from "@/lib/clickup";
 import { computeTaskMetrics } from "@/lib/metrics";
 import { loadConfig as loadConfigForFallback } from "@/lib/config";
+import { computePartial } from "@/lib/calculate";
+import { getTeamSlaForPeriod } from "@/lib/orchestrator";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -32,6 +34,14 @@ export async function GET(request: Request) {
   const isFullMonth = periodo.mode === "mes";
   const fallbackYear = from.getUTCFullYear();
   const fallbackMonth = from.getUTCMonth() + 1;
+
+  // Carrega config + tiers + SLA da equipe UMA vez (não confiar em snapshot
+  // stale por user). SLA é o mesmo pra todos os colaboradores no mesmo período.
+  const [config, tiers, teamSla] = await Promise.all([
+    loadConfigForFallback(),
+    prisma.slaTier.findMany({ orderBy: { minPct: "desc" } }),
+    getTeamSlaForPeriod(fallbackYear, fallbackMonth, to),
+  ]);
 
   const users = await prisma.user.findMany({
     where: { active: true, showInMural: true, clickupUserId: { not: null } },
@@ -89,15 +99,42 @@ export async function GET(request: Request) {
       let pontosDev = 0;
       let tasksDev = 0;
       let tasksSuporte = 0;
-      let slaAvg = latestSnap?.slaMedioMes ?? monthlyClose?.slaFinal ?? 0;
+      // slaAvg do user agora é SEMPRE o SLA da equipe (mesmo número pra todos
+      // — disponibilidade é compartilhada). Pra meses fechados, usa o slaFinal
+      // que ficou congelado no MonthlyClose.
+      let slaAvg = monthlyClose?.slaFinal ?? teamSla.media;
       let mttrHoras: number | null = null;
       let mttaHoras: number | null = null;
       let retornosExecucao = 0;
-      let valorPontos = latestSnap?.valorPontos ?? monthlyClose?.valorPontos ?? 0;
-      let valorDisponibilidade =
-        latestSnap?.valorDisponibilidade ?? monthlyClose?.valorDisponibilidade ?? 0;
-      let valorParcial = latestSnap?.valorParcial ?? monthlyClose?.valorTotal ?? 0;
+      // Pontos: lê do snapshot (depende de tasks fechadas, não muda por tier).
+      // Pra mês fechado: pontos do MonthlyClose.
+      const pontosFromDb = latestSnap
+        ? latestSnap.pontosAcumulados
+        : monthlyClose?.pontos ?? 0;
+      // valor* sempre RECALCULADO via computePartial com tiers/config ATUAIS
+      // (não confiar em valor salvo no snapshot — tiers podem ter mudado).
       const valorIsClosed = !latestSnap && monthlyClose != null;
+      let valorPontos = 0;
+      let valorDisponibilidade = 0;
+      let valorParcial = 0;
+      if (valorIsClosed && monthlyClose) {
+        // Mês fechado: respeita os valores congelados do MonthlyClose.
+        valorPontos = monthlyClose.valorPontos;
+        valorDisponibilidade = monthlyClose.valorDisponibilidade;
+        valorParcial = monthlyClose.valorTotal;
+      } else {
+        // Mês aberto ou parcial: recalcula on-the-fly com tiers/config atuais.
+        const result = computePartial({
+          pontosMes: pontosFromDb,
+          slaMedioMes: slaAvg,
+          valorPorPonto: config.valorPorPonto,
+          valorDisponibilidade100: config.valorDisponibilidade100,
+          tiers,
+        });
+        valorPontos = result.valorPontos;
+        valorDisponibilidade = result.valorDisponibilidade;
+        valorParcial = result.valorParcial;
+      }
 
       const hasAnyDbData = latestMetric != null || latestSnap != null || monthlyClose != null;
 
@@ -129,18 +166,26 @@ export async function GET(request: Request) {
       // do ClickUp direto. Lento (~2s) mas garante dados em meses antigos.
       if (!hasAnyDbData && u.clickupUserId) {
         try {
-          const fallbackConfig = await loadConfigForFallback();
           const tasks = await getTasksForUser(u.clickupUserId, from, to);
-          const metrics = computeTaskMetrics(tasks, to.getTime(), fallbackConfig.taskClassification, fallbackConfig.maxExecDays);
+          const metrics = computeTaskMetrics(tasks, to.getTime(), config.taskClassification, config.maxExecDays);
           pontosDev = metrics.pointsSum;
           tasksDev = metrics.byType.dev.tasksClosed;
           tasksSuporte = metrics.byType.support.tasksClosed;
           mttrHoras = metrics.byType.dev.avgResolutionHours;
           mttaHoras = metrics.byType.support.avgAckHours;
           retornosExecucao = metrics.returnedToExecution;
-          valorPontos = pontosDev * fallbackConfig.valorPorPonto;
-          valorDisponibilidade = fallbackConfig.valorDisponibilidade100;
-          valorParcial = valorPontos + valorDisponibilidade;
+          // Aplica MESMA fórmula do computePartial — não preencher
+          // valorDisponibilidade com 100% fake.
+          const result = computePartial({
+            pontosMes: pontosDev,
+            slaMedioMes: slaAvg,
+            valorPorPonto: config.valorPorPonto,
+            valorDisponibilidade100: config.valorDisponibilidade100,
+            tiers,
+          });
+          valorPontos = result.valorPontos;
+          valorDisponibilidade = result.valorDisponibilidade;
+          valorParcial = result.valorParcial;
         } catch {
           // ClickUp falhou — fica com zeros
         }
@@ -204,11 +249,10 @@ export async function GET(request: Request) {
   const totalTasksSuporte = allCards.reduce((a, c) => a + c.tasksSuporte, 0);
   const retornosTotal = allCards.reduce((a, c) => a + c.retornosExecucao, 0);
 
-  const slaWithData = allCards.filter((c) => c.slaAvg > 0).map((c) => c.slaAvg);
-  const slaMedio =
-    slaWithData.length > 0
-      ? slaWithData.reduce((a, b) => a + b, 0) / slaWithData.length
-      : 0;
+  // SLA da equipe = SLA AGREGADO da infraestrutura (mesmo número pra todos
+  // os colaboradores). NÃO somamos snapshots por user — eles podem estar
+  // stale e dar média incorreta. Usa cálculo on-the-fly pelo period atual.
+  const slaMedio = teamSla.media;
 
   const mttrValues = allCards
     .map((c) => c.mttrHoras)

@@ -9,6 +9,8 @@ import {
 } from "@/lib/date";
 import { computeStreak } from "@/lib/gamification";
 import { loadConfig } from "@/lib/config";
+import { computePartial } from "@/lib/calculate";
+import { getTeamSlaForPeriod } from "@/lib/orchestrator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
   // Pra projeção linear, sempre usamos o mês corrente (faz sentido só no "mês").
   const projectionMonth = monthRange(year, month);
 
-  const [snapshots, taskMetric, history, config] = await Promise.all([
+  const [snapshots, taskMetric, history, config, tiers, teamSla] = await Promise.all([
     prisma.dailySnapshot.findMany({
       where: { userId, date: { gte: from, lte: to } },
       orderBy: { date: "asc" },
@@ -63,6 +65,8 @@ export async function GET(request: Request) {
       take: 12,
     }),
     loadConfig(),
+    prisma.slaTier.findMany({ orderBy: { minPct: "desc" } }),
+    getTeamSlaForPeriod(year, month, to),
   ]);
 
   const last = snapshots.at(-1);
@@ -86,21 +90,22 @@ export async function GET(request: Request) {
     orderBy: { date: "desc" },
   });
   // Projeção: SOMENTE pontos acumulam linearmente. Disponibilidade é paga
-  // uma vez no fim do mês (não acumula por dia), então mantemos o valor
-  // atual da disponibilidade como projeção.
+  // uma vez no fim do mês (não acumula por dia). Recalcula via computePartial
+  // com SLA + tiers ATUAIS pra refletir mudanças de config.
   const projecaoPontos = latestMonthSnap
     ? Math.round((latestMonthSnap.pontosAcumulados / diasDecorridos) * totalDays)
     : 0;
-  const projecaoValorPontos = projecaoPontos * config.valorPorPonto;
-  const projecaoValorDisponibilidade = latestMonthSnap
-    ? latestMonthSnap.valorDisponibilidade
-    : 0;
-  const projecaoValor =
-    Math.round((projecaoValorPontos + projecaoValorDisponibilidade) * 100) / 100;
+  const projecaoCalc = latestMonthSnap
+    ? computePartial({
+        pontosMes: projecaoPontos,
+        slaMedioMes: teamSla.media,
+        valorPorPonto: config.valorPorPonto,
+        valorDisponibilidade100: config.valorDisponibilidade100,
+        tiers,
+      })
+    : null;
+  const projecaoValor = projecaoCalc?.valorParcial ?? 0;
   const deltaDia = last && previous ? last.valorParcial - previous.valorParcial : 0;
-
-  const hostBreakdown: HostBreakdownEntry[] =
-    (last?.hostBreakdown as HostBreakdownEntry[] | null) ?? [];
 
   return NextResponse.json({
     periodo: {
@@ -111,15 +116,33 @@ export async function GET(request: Request) {
     },
     month: { year, month, totalDays, diasDecorridos, diasRestantes },
     parcial: last
-      ? {
-          pontos: last.pontosAcumulados,
-          sla: last.slaMedioMes,
-          valorPontos: last.valorPontos,
-          valorDisponibilidade: last.valorDisponibilidade,
-          valorParcial: last.valorParcial,
-          date: last.date,
-          hostBreakdown,
-        }
+      ? (() => {
+          // SEMPRE recalcula com tiers/config ATUAIS (não confiar em valor
+          // stale do snapshot — tiers podem ter mudado depois do último daily).
+          // teamSla.media é o SLA da equipe AGORA (não o do snapshot).
+          const recalc = computePartial({
+            pontosMes: last.pontosAcumulados,
+            slaMedioMes: teamSla.media,
+            valorPorPonto: config.valorPorPonto,
+            valorDisponibilidade100: config.valorDisponibilidade100,
+            tiers,
+          });
+          return {
+            pontos: last.pontosAcumulados,
+            sla: teamSla.media,
+            valorPontos: recalc.valorPontos,
+            valorDisponibilidade: recalc.valorDisponibilidade,
+            valorParcial: recalc.valorParcial,
+            date: last.date,
+            // hostBreakdown SEMPRE do teamSla atual (não do snapshot stale)
+            hostBreakdown: teamSla.breakdown.map((b) => ({
+              hostId: b.hostId,
+              name: b.name,
+              pct: b.pct ?? 100,
+              type: b.type,
+            })),
+          };
+        })()
       : null,
     suporte: taskMetric
       ? {
