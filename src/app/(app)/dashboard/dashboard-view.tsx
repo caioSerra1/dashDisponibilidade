@@ -77,6 +77,10 @@ interface DashboardData {
     metaSla: number;
     metaPontos: number;
   };
+  config: {
+    valorDisponibilidade100: number;
+    valorPorPonto: number;
+  };
 }
 
 function plural(n: number, singular: string, plural: string): string {
@@ -255,7 +259,7 @@ export function DashboardView({
         <Kpi
           title="Variável de disponibilidade"
           value={formatBRL(parcial?.valorDisponibilidade ?? 0)}
-          helper={`de ${formatBRL(parcial ? parcial.valorDisponibilidade / Math.max(parcial.sla / 100, 0.0001) : 0)} possíveis`}
+          helper={`de ${formatBRL(data.config?.valorDisponibilidade100 ?? 0)} possíveis`}
           icon={Trophy}
         />
       </div>

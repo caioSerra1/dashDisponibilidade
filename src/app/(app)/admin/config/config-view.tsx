@@ -600,24 +600,24 @@ function TierPayoutInput({
   teto: number;
   onChange: (payoutPct: number) => void;
 }) {
-  // Computa R$ inicial a partir do payoutPct (sem arredondar a precisão).
-  const valorReais = teto > 0 ? (payoutPct / 100) * teto : 0;
-  // State local pra preservar exatamente o que o user digitou.
-  const [draftReais, setDraftReais] = useState<number>(valorReais);
+  // Computa R$ inicial a partir do payoutPct.
+  const valorReaisFromPct = teto > 0 ? (payoutPct / 100) * teto : 0;
+  // State local: PRESERVA EXATAMENTE o que o user digitou. Float error de
+  // round-trip (R$ → % → R$) deixava 500 virar 500.000003999.
+  const [draftReais, setDraftReais] = useState<number>(valorReaisFromPct);
+  // Marca quando o draft veio de digitação local — pra ignorar sync do parent
+  // logo em seguida (que traz o valor com float error).
+  const isLocalEdit = useRef(false);
 
-  // Quando o payoutPct vier do parent (mudança externa, ex: outro tier),
-  // sincroniza o draft.
   useEffect(() => {
-    setDraftReais(valorReais);
+    if (isLocalEdit.current) {
+      // Sync veio APÓS edição local → ignora (já temos o valor exato digitado).
+      isLocalEdit.current = false;
+      return;
+    }
+    setDraftReais(valorReaisFromPct);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payoutPct, teto]);
-
-  function commit(reais: number) {
-    if (teto <= 0) return;
-    const newPayoutPct = (reais / teto) * 100;
-    // Mantém precisão: NÃO arredonda. payoutPct fica com decimais reais.
-    onChange(newPayoutPct);
-  }
 
   return (
     <div className="flex-1 space-y-1.5">
@@ -625,8 +625,9 @@ function TierPayoutInput({
       <NumberField
         value={draftReais}
         onChange={(v) => {
+          isLocalEdit.current = true;
           setDraftReais(v);
-          commit(v); // commit imediato (preserva valor digitado)
+          if (teto > 0) onChange((v / teto) * 100);
         }}
       />
       <p className="text-[10px] text-muted-foreground">

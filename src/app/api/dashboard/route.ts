@@ -136,7 +136,28 @@ export async function GET(request: Request) {
       })
     : null;
   const projecaoValor = projecaoCalc?.valorParcial ?? 0;
-  const deltaDia = last && previous ? last.valorParcial - previous.valorParcial : 0;
+  // deltaDia: recalcula AMBOS (last e previous) com tiers ATUAIS pra
+  // evitar falso negativo quando admin mudou tier (ex: snapshot de ontem
+  // foi salvo com tier R$1500 e hoje com R$1200, dava "▼ R$300 vs ontem"
+  // sem o user ter perdido nada).
+  const deltaDia = (() => {
+    if (!last || !previous) return 0;
+    const recalcLast = computePartial({
+      pontosMes: last.pontosAcumulados,
+      slaMedioMes: teamSla.media,
+      valorPorPonto: config.valorPorPonto,
+      valorDisponibilidade100: config.valorDisponibilidade100,
+      tiers,
+    });
+    const recalcPrev = computePartial({
+      pontosMes: previous.pontosAcumulados,
+      slaMedioMes: teamSla.media,
+      valorPorPonto: config.valorPorPonto,
+      valorDisponibilidade100: config.valorDisponibilidade100,
+      tiers,
+    });
+    return recalcLast.valorParcial - recalcPrev.valorParcial;
+  })();
 
   return NextResponse.json({
     periodo: {
@@ -208,6 +229,10 @@ export async function GET(request: Request) {
       dias: streak,
       metaSla: config.metaSlaStreak,
       metaPontos: config.metaPontosMes,
+    },
+    config: {
+      valorDisponibilidade100: config.valorDisponibilidade100,
+      valorPorPonto: config.valorPorPonto,
     },
   });
 }
